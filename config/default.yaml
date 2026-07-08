@@ -1,0 +1,81 @@
+# Default configuration: large GEO communications satellite with two large
+# solar array wings deployed along the +/- pitch (y) axis.
+#
+# Units: SI unless noted (kg*m^2, N*m, N*m*s, rad/s, Hz, seconds).
+# Body axes: x = roll (velocity direction at nadir attitude), y = pitch
+# (orbit anti-normal), z = yaw (nadir).
+
+spacecraft:
+  inertia:
+    - [8000.0,    0.0,    0.0]
+    - [   0.0, 4500.0,    0.0]
+    - [   0.0,    0.0, 6500.0]
+  # Mass-normalized appendage modes; participation is the 3-vector rotational
+  # coupling into [roll, pitch, yaw] (units sqrt(kg)*m). The squared magnitude
+  # is the modal contribution to the effective inertia about that axis.
+  modes:
+    - {freq_hz: 0.10, damping: 0.005, participation: [45.0,  0.0,  0.0]}  # 1st out-of-plane array bending
+    - {freq_hz: 0.15, damping: 0.005, participation: [ 0.0,  0.0, 35.0]}  # 1st in-plane array bending
+    - {freq_hz: 0.35, damping: 0.005, participation: [ 0.0, 25.0,  0.0]}  # array torsion
+    - {freq_hz: 0.55, damping: 0.005, participation: [18.0,  0.0,  5.0]}  # 2nd out-of-plane bending
+
+orbit_rate: 7.2921159e-5  # GEO sidereal rate, rad/s
+
+wheels:
+  ideal: false        # true = unlimited torque source, no momentum tracking
+  max_torque: 0.2     # N*m, per body axis
+  max_momentum: 68.0  # N*m*s, per body axis
+
+sensors:
+  perfect: false
+  gyro_rate_noise: 1.0e-6          # rad/s 1-sigma, per axis per sample
+  gyro_bias: [2.0e-7, -1.0e-7, 1.5e-7]  # rad/s
+  star_tracker_noise_arcsec: 10.0  # 1-sigma per axis
+  seed: 42
+
+environment:
+  gravity_gradient: true
+  srp:
+    enabled: true
+    constant: [1.0e-5, 5.0e-5, 1.0e-5]            # N*m, body frame
+    harmonic_amplitude: [5.0e-5, 0.0, 5.0e-5]     # N*m at orbit rate
+
+controller:
+  rate_hz: 4.0   # discrete execution rate
+  delay_s: 0.0   # additional computation delay (frequency analysis)
+  # Gains are computed per axis from the design rule (Kp = J*wn^2,
+  # Kd = 2*zeta*J*wn, Ki = Kp*wn/integral_time_factor) unless kp/ki/kd are
+  # given explicitly below.
+  design:
+    bandwidth_hz: 0.02
+    damping: 0.7
+    integral_time_factor: 10.0
+  # kp: [...]   # explicit per-axis gains override the design rule
+  # ki: [...]
+  # kd: [...]
+  # Structural filters: notches gain-stabilize each significant flexible
+  # resonance at its coupled (free-free) frequency — the cantilever mode
+  # frequency shifted up by sqrt(J/(J - l^2)) — and a high lowpass rolls off
+  # gain above the control band at small phase cost at crossover.
+  filters:
+    - {type: notch, freq_hz: 0.116, damping: 0.5, depth_db: 30.0}  # roll 1st bending (coupled)
+    - {type: notch, freq_hz: 0.166, damping: 0.5, depth_db: 20.0}  # yaw 1st bending (coupled)
+    - {type: notch, freq_hz: 0.374, damping: 0.5, depth_db: 15.0}  # pitch torsion (coupled)
+    - {type: lowpass, freq_hz: 0.6, damping: 0.7}                  # high-frequency roll-off
+
+guidance:
+  mode: nadir   # track the LVLH frame (z to nadir) at orbit rate
+  # mode: inertial with q_inertial: [w, x, y, z] holds a fixed attitude
+  # Note on step size: with the default gains the wheels saturate for
+  # attitude errors above ~0.1 deg, so large steps become torque-limited
+  # slews with saturation-driven overshoot (e.g. ~76% at 10 deg). 0.5 deg
+  # stays close to the linear regime and shows the loop dynamics cleanly.
+  step:
+    axis: [1.0, 0.0, 0.0]  # body axis of the commanded attitude step
+    angle_deg: 0.5
+    time_s: 100.0
+
+simulation:
+  duration_s: 900.0
+  substeps: 10          # RK4 integration steps per controller sample
+  settling_band: 0.02   # settling criterion, fraction of step amplitude
