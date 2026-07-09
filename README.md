@@ -194,9 +194,12 @@ src/spacecraft_acs/
   dynamics.py              # flexible-body EOM (RK4)
   actuators.py sensors.py environment.py guidance.py
   profiler.py              # smooth eigenaxis slew profile
+  estimator.py             # 6-state MEKF (attitude + gyro bias)
+  momentum.py              # thruster momentum unload manager
   controller.py            # discrete quaternion PID + filters + feedforward
   simulate.py              # closed-loop sim + step/maneuver metrics
-  linearize.py             # per-axis LTI models, margins, closed loop
+  linearize.py             # coupled loop-at-a-time LTI margins, closed loop
+  montecarlo.py            # plant-dispersion robustness analysis
   plotting.py cli.py
 tests/                     # physics + control verification suite
 ```
