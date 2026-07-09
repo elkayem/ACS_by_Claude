@@ -81,8 +81,19 @@ def disperse(config: Config, disp: DispersionConfig, rng: np.random.Generator) -
                 1.0 + (disp.participation_pct / 100.0) * rng.uniform(-1.0, 1.0, 3)
             )
             modes.append(m)
+        tanks = []
+        for t in copy.deepcopy(sc.tanks):
+            t.freq_hz *= 1.0 + (disp.slosh_freq_pct / 100.0) * rng.uniform(-1.0, 1.0)
+            t.propellant_mass *= 1.0 + (disp.slosh_mass_pct / 100.0) * rng.uniform(-1.0, 1.0)
+            if t.slosh_mass is not None:
+                t.slosh_mass *= 1.0 + (disp.slosh_mass_pct / 100.0) * rng.uniform(-1.0, 1.0)
+            lo, hi = disp.slosh_damping_range
+            t.damping = float(np.exp(rng.uniform(np.log(lo), np.log(hi))))
+            tanks.append(t)
         try:
-            cfg.spacecraft = type(sc)(inertia=inertia, modes=modes)
+            cfg.spacecraft = type(sc)(
+                inertia=inertia, modes=modes, mass=sc.mass, tanks=tanks
+            )
             return cfg
         except ValueError:
             continue  # invalid draw (e.g. participation too large); redraw

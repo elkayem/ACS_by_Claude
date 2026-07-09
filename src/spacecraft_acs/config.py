@@ -30,9 +30,37 @@ class ModeConfig:
 
 
 @dataclass
+class TankConfig:
+    """One propellant tank, reduced to its first lateral slosh mode (two
+    orthogonal lateral directions -> two equivalent rotational modes)."""
+
+    propellant_mass: float  # kg
+    fill_fraction: float = 0.5
+    location: np.ndarray = field(default_factory=lambda: np.zeros(3))  # m from CM
+    axis: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 1.0]))
+    freq_hz: float = 0.008  # tank-fixed slosh frequency (zero-g/PMD regime)
+    damping: float = 0.003
+    slosh_mass: float | None = None  # kg; overrides the SP-106 fill-fraction fit
+
+    def __post_init__(self):
+        self.location = np.asarray(self.location, dtype=float)
+        self.axis = np.asarray(self.axis, dtype=float)
+        if self.location.shape != (3,) or self.axis.shape != (3,):
+            raise ValueError("tank location and axis must be 3-vectors")
+        if np.linalg.norm(self.axis) == 0.0:
+            raise ValueError("tank axis must be nonzero")
+        if self.propellant_mass <= 0.0 or self.freq_hz <= 0.0:
+            raise ValueError("tank propellant mass and frequency must be positive")
+        if not 0.0 <= self.damping < 1.0:
+            raise ValueError("tank slosh damping must be in [0, 1)")
+
+
+@dataclass
 class SpacecraftConfig:
     inertia: np.ndarray  # (3, 3) kg*m^2
     modes: list[ModeConfig] = field(default_factory=list)
+    mass: float = 3000.0  # kg total; sets the slosh CM-shift coupling
+    tanks: list[TankConfig] = field(default_factory=list)
 
     def __post_init__(self):
         self.inertia = np.asarray(self.inertia, dtype=float)
@@ -42,29 +70,51 @@ class SpacecraftConfig:
             raise ValueError("inertia tensor must be symmetric")
         if np.any(np.linalg.eigvalsh(self.inertia) <= 0.0):
             raise ValueError("inertia tensor must be positive definite")
+        if self.mass <= 0.0:
+            raise ValueError("spacecraft mass must be positive")
         # The hybrid-coordinate mass matrix [[J, L], [L^T, I]] must be positive
-        # definite, which by Schur complement requires J - L L^T > 0.
+        # definite, which by Schur complement requires J - L L^T > 0. The
+        # participation matrix includes the slosh-equivalent modes.
         L = self.participation_matrix
-        if self.modes and np.any(np.linalg.eigvalsh(self.inertia - L @ L.T) <= 0.0):
+        if self.all_modes and np.any(
+            np.linalg.eigvalsh(self.inertia - L @ L.T) <= 0.0
+        ):
             raise ValueError(
                 "modal participation too large: J - L L^T is not positive definite"
             )
 
     @property
+    def slosh_modes(self) -> list[ModeConfig]:
+        """Equivalent rotational modes for every tank (two per tank)."""
+        from .slosh import tank_equivalent_modes
+
+        out = []
+        for tank in self.tanks:
+            out.extend(tank_equivalent_modes(tank, self.mass))
+        return out
+
+    @property
+    def all_modes(self) -> list[ModeConfig]:
+        """Structural modes followed by slosh-equivalent modes; this is the
+        mode set the dynamics and linear analysis operate on."""
+        return list(self.modes) + self.slosh_modes
+
+    @property
     def participation_matrix(self) -> np.ndarray:
-        """L, shape (3, n_modes)."""
-        if not self.modes:
+        """L, shape (3, n_modes), including slosh-equivalent modes."""
+        modes = self.all_modes
+        if not modes:
             return np.zeros((3, 0))
-        return np.column_stack([m.participation for m in self.modes])
+        return np.column_stack([m.participation for m in modes])
 
     @property
     def mode_freqs(self) -> np.ndarray:
         """Natural frequencies in rad/s, shape (n_modes,)."""
-        return 2.0 * np.pi * np.array([m.freq_hz for m in self.modes])
+        return 2.0 * np.pi * np.array([m.freq_hz for m in self.all_modes])
 
     @property
     def mode_dampings(self) -> np.ndarray:
-        return np.array([m.damping for m in self.modes])
+        return np.array([m.damping for m in self.all_modes])
 
 
 @dataclass
@@ -170,14 +220,23 @@ class DispersionConfig:
     mode_freq_pct: float = 15.0
     mode_damping_range: tuple = (0.005, 0.01)  # absolute, uniform
     participation_pct: float = 20.0
+    # Slosh parameters are far less predictable than structural modes, so
+    # they are dispersed much harder
+    slosh_freq_pct: float = 50.0
+    slosh_mass_pct: float = 30.0
+    slosh_damping_range: tuple = (0.001, 0.01)  # absolute, log-uniform
 
     def __post_init__(self):
         self.mode_damping_range = tuple(self.mode_damping_range)
-        if len(self.mode_damping_range) != 2 or not (
-            0.0 < self.mode_damping_range[0] <= self.mode_damping_range[1] < 1.0
+        self.slosh_damping_range = tuple(self.slosh_damping_range)
+        for rng_name in ("mode_damping_range", "slosh_damping_range"):
+            rng = getattr(self, rng_name)
+            if len(rng) != 2 or not (0.0 < rng[0] <= rng[1] < 1.0):
+                raise ValueError(f"{rng_name} must be (lo, hi) in (0, 1)")
+        for name in (
+            "inertia_pct", "mode_freq_pct", "participation_pct",
+            "slosh_freq_pct", "slosh_mass_pct",
         ):
-            raise ValueError("mode_damping_range must be (lo, hi) in (0, 1)")
-        for name in ("inertia_pct", "mode_freq_pct", "participation_pct"):
             if getattr(self, name) < 0.0:
                 raise ValueError(f"{name} must be >= 0")
 
@@ -365,6 +424,8 @@ def from_dict(raw: dict) -> Config:
     spacecraft = SpacecraftConfig(
         inertia=sc["inertia"],
         modes=[ModeConfig(**m) for m in sc.get("modes", [])],
+        mass=sc.get("mass", 3000.0),
+        tanks=[TankConfig(**t) for t in sc.get("tanks", [])],
     )
     ctrl_raw = dict(raw.get("controller", {}))
     design = GainDesignConfig(**ctrl_raw.pop("design", {}))

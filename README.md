@@ -101,6 +101,14 @@ poles at the coupled free-free frequency `ω√(J/(J−l²))` above it.
   unload (the constant SRP pitch torque accumulates ~4.3 N·m·s/day):
   bang-bang-with-deadband law, minimum-impulse-bit pulse quantization via an
   impulse-debt accumulator, and wheel feedforward compensation of each pulse
+- **Propellant slosh** (`slosh.py`) — each tank's first lateral mode as an
+  equivalent spring-mass (Abramson SP-106 slosh-mass-fraction fit vs fill
+  fraction), reduced by momentum elimination to two rotational modes per
+  tank in the same hybrid-coordinate form as the structural modes:
+  participation `(r×ê)·√(m_s/(1−m_s/M))`, frequency raised by the CM-shift
+  factor. Slosh lands *in-band* (≈7–9 mHz vs 16–34 mHz crossovers) — it is
+  phase-stabilized, not notched, and the analysis excludes in-band modes
+  from the gain-stabilization check accordingly
 - **Guidance** — nadir-pointing LVLH tracking at the GEO orbit rate (default)
   or inertial hold; attitude commands are quaternions and step offsets are
   applied about a configurable axis
@@ -164,11 +172,32 @@ attenuation at the dispersed mode positions for about half the crossover
 phase cost of a Butterworth section. Every filter is assigned only to the
 axis that needs it.
 
-Results: nominal GM 9.3–9.9 dB, PM 35–42°, closed-loop BW 33/78/43 mHz —
-and under the full dispersion set (inertia ±10%, mode frequency ±15%,
-damping 0.005–0.01, participation ±20%, 100 samples) **100% of samples meet
-GM ≥ 6 dB, PM ≥ 30°, worst mode ≤ −6 dB, with zero unstable cases**
-(worst-case sample: GM 9.1 dB, PM 35.3°, mode −8.9 dB).
+Results with slosh included: nominal GM 8.3–9.9 dB, PM 35–39°, closed-loop
+BW 35/95/43 mHz — and under the full dispersion set (inertia ±10%, mode
+frequency ±15%, damping 0.005–0.01, participation ±20%, slosh frequency
+±50%, slosh mass ±30%, slosh damping 0.004–0.02, 100 samples) **100% of
+samples meet GM ≥ 6 dB, PM ≥ 30°, worst mode ≤ −6 dB, with zero unstable
+cases** (worst-case sample: GM 7.8 dB, PM 33.5°, mode −8.1 dB).
+
+**Derived tank requirement — slosh damping ≥ 0.004 (PMD-class).** With
+bare-tank damping (ζ floor 0.001) the pass rate falls to ~65% (min PM 15°):
+the lightly damped slosh ripple crosses unity near the roll/yaw crossovers
+and erodes the margins, and raising bandwidth to clear it is impossible
+because the wide array-mode notches forbid a higher crossover — the
+slosh-to-array corridor closes. Crucially, tighter slosh *frequency*
+knowledge (±25%) does not help at all; damping is the binding parameter.
+Any PMD-class floor closes the design (ζ 0.004–0.02 → 100%, 0.01–0.05 →
+100%, diaphragm 0.03–0.10 → 100%): slosh compliance is bought with tank
+hardware, not control gains. Higher controller sample rate does not help
+either — the ZOH delay costs only ~0.7° of PM at crossover vs ~33° for the
+robustness filters (4 → 50 Hz buys 0.3°).
+
+Operational note: slosh rings after maneuvers. A 1° maneuver (profiled or
+raw) leaves ~1 cm of propellant CM motion ringing at ~7 mHz with a ~45 min
+decay, visible as ~30–100 arcsec of attitude oscillation; the default slew
+profile (~89 s) is spectrally close to the slosh band. Slosh-gentle slews
+must be several slosh periods long (lower `max_accel_dps2`), a standard
+agility-vs-quiescence trade.
 
 Design history worth knowing: an earlier high-bandwidth variant
 (30/55/38 mHz, narrow notches) had spectacular nominal margins
@@ -196,6 +225,7 @@ src/spacecraft_acs/
   dynamics.py              # flexible-body EOM (RK4)
   actuators.py sensors.py environment.py guidance.py
   profiler.py              # smooth eigenaxis slew profile
+  slosh.py                 # tank slosh -> equivalent rotational modes
   estimator.py             # 6-state MEKF (attitude + gyro bias)
   momentum.py              # thruster momentum unload manager
   controller.py            # discrete quaternion PID + filters + feedforward

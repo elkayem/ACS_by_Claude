@@ -12,7 +12,9 @@ def test_default_config_loads():
     c = cfg.load(DEFAULT_YAML)
     assert c.spacecraft.inertia.shape == (3, 3)
     assert len(c.spacecraft.modes) == 4
-    assert c.spacecraft.participation_matrix.shape == (3, 4)
+    assert len(c.spacecraft.tanks) == 2
+    # 4 structural + 2 slosh-equivalent modes per tank
+    assert c.spacecraft.participation_matrix.shape == (3, 8)
     assert c.controller.rate_hz == 4.0
     assert c.guidance.mode == "nadir"
     assert np.isclose(c.orbit_rate, 7.2921159e-5)

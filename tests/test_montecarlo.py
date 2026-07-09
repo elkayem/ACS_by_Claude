@@ -48,6 +48,9 @@ def test_zero_dispersion_matches_nominal():
         mode_freq_pct=0.0,
         mode_damping_range=(0.005, 0.005),
         participation_pct=0.0,
+        slosh_freq_pct=0.0,
+        slosh_mass_pct=0.0,
+        slosh_damping_range=(0.003, 0.003),
     )
     d = montecarlo.disperse(cfg, disp, np.random.default_rng(0))
     nominal = montecarlo.evaluate(cfg, -1, time_domain=False, n_points=800)

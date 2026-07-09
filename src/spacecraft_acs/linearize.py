@@ -169,9 +169,28 @@ def analyze_axis(config: Config, axis: int, f_min=1e-4, f_max=None, n_points=400
         # Cover the flex modes and the Nyquist neighborhood
         f_max = max(
             [2.0 * config.controller.rate_hz]
-            + [5.0 * m.freq_hz for m in config.spacecraft.modes]
+            + [5.0 * m.freq_hz for m in config.spacecraft.all_modes]
         )
-    w = 2.0 * np.pi * np.logspace(np.log10(f_min), np.log10(f_max), n_points)
+    f_grid = np.logspace(np.log10(f_min), np.log10(f_max), n_points)
+    # A lightly damped mode (zeta ~ 1e-3) has a fractional width far below
+    # the base log-grid spacing, so margins computed from the frequency
+    # response would under-sample its pole/zero ripple (spurious or missed
+    # unity crossings). Densify around every mode's cantilever-to-coupled
+    # band, padded by several damping half-widths.
+    j_diag = np.diag(config.spacecraft.inertia)
+    clusters = []
+    for m in config.spacecraft.all_modes:
+        shift = np.sqrt(
+            np.max(j_diag / np.maximum(j_diag - m.participation**2, 1e-30))
+        )
+        pad = 1.0 + 20.0 * max(m.damping, 1e-4)
+        lo = m.freq_hz / pad
+        hi = m.freq_hz * shift * pad
+        clusters.append(np.linspace(lo, hi, 300))
+    if clusters:
+        f_grid = np.unique(np.concatenate([f_grid] + clusters))
+        f_grid = f_grid[(f_grid >= f_min) & (f_grid <= f_max)]
+    w = 2.0 * np.pi * f_grid
 
     # Loop-at-a-time open loop on the coupled plant (other loops closed),
     # built entirely in state space: polynomial (transfer-function)
@@ -202,28 +221,37 @@ def analyze_axis(config: Config, axis: int, f_min=1e-4, f_max=None, n_points=400
     cl_mag_db = 20.0 * np.log10(np.abs(t_cl(1j * w)))
     sens_mag_db = 20.0 * np.log10(np.abs(s_cl(1j * w)))
 
-    # Closed-loop bandwidth: last -3 dB downward crossing of |T|
-    below = np.nonzero(cl_mag_db < -3.0)[0]
-    above = np.nonzero(cl_mag_db >= -3.0)[0]
+    # Closed-loop bandwidth: LAST -3 dB downward crossing of |T| (a slosh
+    # zero can notch |T| below -3 dB well inside the band; the band edge is
+    # where |T| leaves -3 dB for good)
+    above3 = np.nonzero(cl_mag_db >= -3.0)[0]
     cl_bandwidth_hz = None
-    if above.size and below.size:
-        first_below_after = below[below > above[0]]
-        if first_below_after.size:
-            cl_bandwidth_hz = freq_hz[first_below_after[0]]
+    if above3.size and above3[-1] + 1 < len(freq_hz):
+        cl_bandwidth_hz = freq_hz[above3[-1] + 1]
 
     # Peak open-loop gain around each flexible resonance (gain-stabilization
     # check): |L| peak within +/-15% of the coupled (free-free) frequency,
     # which sits above the cantilever frequency by sqrt(J/(J - l^2)). The
     # +/-15% window represents modal frequency uncertainty the notches must
     # cover. Modes with negligible participation on this axis produce no
-    # resonance in this loop and are skipped.
+    # resonance in this loop and are skipped — as are IN-BAND modes (slosh,
+    # at or below the crossover region): those cannot be gain-stabilized by
+    # definition, are phase-stabilized instead, and their health is judged
+    # by the margins and the coupled closed-loop poles. "In band" is judged
+    # against the LAST downward 0-dB crossing of |L|: low-frequency slosh
+    # ripple can create early unity crossings that margin() may report as
+    # the crossover, but gain stabilization only applies above the final one.
+    above = np.nonzero(mag_db > 0.0)[0]
+    f_band_edge = freq_hz[above[-1]] if above.size else 0.0
     j_axis = config.spacecraft.inertia[axis, axis]
     mode_gain_db = []
-    for m in config.spacecraft.modes:
+    for m in config.spacecraft.all_modes:
         l_ax = m.participation[axis]
         if l_ax**2 / j_axis < 1e-4:
             continue
         f_coupled = m.freq_hz * np.sqrt(j_axis / (j_axis - l_ax**2))
+        if f_coupled <= 1.2 * f_band_edge:
+            continue
         window = (freq_hz >= 0.85 * f_coupled) & (freq_hz <= 1.15 * f_coupled)
         mode_gain_db.append((f_coupled, float(np.max(mag_db[window]))))
 

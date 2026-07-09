@@ -6,10 +6,27 @@
 # (orbit anti-normal), z = yaw (nadir).
 
 spacecraft:
+  mass: 3000.0  # kg total (wet); sets the slosh CM-shift coupling
   inertia:
     - [8000.0,    0.0,    0.0]
     - [   0.0, 4500.0,    0.0]
     - [   0.0,    0.0, 6500.0]
+  # Propellant tanks, each reduced to its first lateral slosh mode (two
+  # equivalent rotational modes per tank, see slosh.py). Slosh mass comes
+  # from the SP-106 spherical-tank fit at the given fill fraction unless
+  # slosh_mass is given explicitly. freq_hz/damping are the tank-fixed
+  # zero-g values.
+  #
+  # DERIVED TANK REQUIREMENT: slosh damping >= 0.004 (PMD-class). The Monte
+  # Carlo shows the design passes 100% with a zeta 0.004-0.02 dispersion but
+  # only ~65% with bare-tank damping (0.001 floor) — and better slosh
+  # frequency knowledge does NOT recover it (damping, not frequency, is the
+  # binding parameter). Values below assume PMD vanes in the tanks.
+  tanks:
+    - {propellant_mass: 700.0, fill_fraction: 0.5, location: [0.0, 0.0,  0.9],
+       axis: [0.0, 0.0, 1.0], freq_hz: 0.007, damping: 0.008}  # oxidizer
+    - {propellant_mass: 430.0, fill_fraction: 0.5, location: [0.0, 0.0, -0.9],
+       axis: [0.0, 0.0, 1.0], freq_hz: 0.009, damping: 0.008}  # fuel
   # Mass-normalized appendage modes; participation is the 3-vector rotational
   # coupling into [roll, pitch, yaw] (units sqrt(kg)*m). The squared magnitude
   # is the modal contribution to the effective inertia about that axis.
@@ -142,3 +159,9 @@ monte_carlo:
     mode_freq_pct: 15.0            # matches the notch-width design assumption
     mode_damping_range: [0.005, 0.01]  # structural damping floor 0.5%
     participation_pct: 20.0
+    # Slosh predictions are far softer than structural-mode predictions.
+    # The damping range assumes the PMD tank requirement (>= 0.004); with a
+    # bare-tank floor of 0.001 the pass rate drops to ~65% (min PM ~15 deg).
+    slosh_freq_pct: 50.0
+    slosh_mass_pct: 30.0
+    slosh_damping_range: [0.004, 0.02]  # log-uniform

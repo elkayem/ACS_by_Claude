@@ -68,12 +68,18 @@ def plot_step_response(result, metrics, output_dir: Path) -> Path:
     ax.set_ylabel("wheel momentum [N·m·s]")
 
     ax = axes[4]
-    for j, mode in enumerate(cfg.spacecraft.modes):
-        ax.plot(t, result.eta[:, j], label=f"mode {j + 1} ({mode.freq_hz:.2f} Hz)")
+    all_modes = cfg.spacecraft.all_modes
+    n_struct = len(cfg.spacecraft.modes)
+    for j, mode in enumerate(all_modes):
+        tag = "slosh " if j >= n_struct else "mode "
+        ax.plot(
+            t, result.eta[:, j],
+            label=f"{tag}{j + 1} ({mode.freq_hz:.3f} Hz)",
+        )
     ax.set_ylabel("modal displacement\n[√kg·m·rad]")
     ax.set_xlabel("time [s]")
-    if cfg.spacecraft.modes:
-        ax.legend(loc="upper right", fontsize=8)
+    if all_modes:
+        ax.legend(loc="upper right", fontsize=7)
 
     for ax in axes:
         ax.grid(alpha=0.3)
@@ -121,11 +127,12 @@ def plot_slew_comparison(res_prof, res_step, output_dir: Path) -> Path:
     ax.legend(loc="upper right", fontsize=8)
 
     ax = axes[3]
+    all_modes = cfg.spacecraft.all_modes
     for res, color, _ in runs:
         worst = np.argmax(np.max(np.abs(res.eta), axis=0))
         ax.plot(
             res.t, res.eta[:, worst], color=color,
-            label=f"mode {worst + 1} ({cfg.spacecraft.modes[worst].freq_hz:.2f} Hz)",
+            label=f"mode {worst + 1} ({all_modes[worst].freq_hz:.3f} Hz)",
         )
     ax.set_ylabel("worst modal displacement\n[√kg·m·rad]")
     ax.set_xlabel("time [s]")
