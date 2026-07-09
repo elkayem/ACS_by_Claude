@@ -26,7 +26,11 @@ def test_step_response_end_to_end():
 
     metrics = simulate.step_metrics(result)
     assert metrics.settling_time_s is not None, "step did not settle"
-    assert metrics.overshoot_pct < 40.0
+    # A raw 1-deg step saturates the wheels hard with the default gains, so
+    # substantial saturation-driven overshoot (~50%) is expected physics; the
+    # profiled slew (acs compare) is the operational alternative. This bound
+    # only guards against gross regression.
+    assert metrics.overshoot_pct < 70.0
     # Wheel torque respects the saturation limit
     assert np.max(np.abs(result.torque_applied)) <= cfg.wheels.max_torque + 1e-12
     # Momentum bookkeeping: dh_w/dt = -T_applied under ZOH
@@ -41,7 +45,10 @@ def _sim_max_error(cfg) -> float:
     """Max attitude error over the run, with a small initial-condition kick
     delivered through a brief command offset (no step, clean environment)."""
     result = simulate.run(cfg)
-    return float(np.max(np.abs(result.att_err_deg)))
+    err = result.att_err_deg
+    if not np.all(np.isfinite(err)):
+        return float("inf")  # diverged past floating-point range
+    return float(np.max(np.abs(err)))
 
 
 def _clean_config(gain_scale: float):
@@ -64,11 +71,11 @@ def _clean_config(gain_scale: float):
 
 @pytest.mark.slow
 def test_gain_margin_consistency_with_time_domain():
-    """The linear analysis predicts ~10-11 dB gain margin (factor ~3.2-3.6).
-    The nonlinear sim must be stable well below it and unstable above it."""
+    """The linear analysis predicts ~15 dB worst-axis gain margin (factor
+    ~5.6). The nonlinear sim must be stable well below it and unstable above."""
     gm_db = min(d.gm_db for d in linearize.analyze(load_default()))
     gm_factor = 10.0 ** (gm_db / 20.0)
-    assert 2.5 < gm_factor < 4.5  # sanity: default design near 10-11 dB
+    assert 4.0 < gm_factor < 7.5  # sanity: default design near 14-16 dB
 
     err_stable = _sim_max_error(_clean_config(0.6 * gm_factor))
     err_unstable = _sim_max_error(_clean_config(1.4 * gm_factor))

@@ -109,14 +109,23 @@ class EnvironmentConfig:
     srp: SrpConfig = field(default_factory=SrpConfig)
 
 
+_AXIS_NAMES = {"roll": 0, "x": 0, "pitch": 1, "y": 1, "yaw": 2, "z": 2}
+
+
 @dataclass
 class FilterConfig:
-    """One second-order filter section applied to the torque command."""
+    """One second-order filter section applied to the torque command.
+
+    `axes` selects which body axes the section acts on ("all", one axis name,
+    or a list of names/indices), so each axis only pays the phase lag of the
+    notches its own flexible modes require.
+    """
 
     type: str  # "lowpass" or "notch"
     freq_hz: float
     damping: float = 0.7  # lowpass damping, or notch denominator damping (width)
     depth_db: float = 20.0  # notch only
+    axes: object = "all"
 
     def __post_init__(self):
         if self.type not in ("lowpass", "notch"):
@@ -125,13 +134,40 @@ class FilterConfig:
             raise ValueError("filter frequency must be positive")
         if self.depth_db < 0.0:
             raise ValueError("notch depth_db must be >= 0")
+        self.axes = _parse_axes(self.axes)
+
+
+def _parse_axes(spec) -> tuple[int, ...]:
+    if spec == "all":
+        return (0, 1, 2)
+    if isinstance(spec, (str, int)):
+        spec = [spec]
+    out = []
+    for a in spec:
+        if isinstance(a, str):
+            if a.lower() not in _AXIS_NAMES:
+                raise ValueError(f"unknown axis name {a!r}")
+            out.append(_AXIS_NAMES[a.lower()])
+        else:
+            if a not in (0, 1, 2):
+                raise ValueError(f"axis index must be 0, 1, or 2, got {a}")
+            out.append(int(a))
+    return tuple(sorted(set(out)))
 
 
 @dataclass
 class GainDesignConfig:
-    bandwidth_hz: float = 0.02
+    bandwidth_hz: object = 0.02  # scalar, or 3-list for per-axis bandwidths
     damping: float = 0.7
     integral_time_factor: float = 10.0  # Ti = factor / wn; 0 disables integral
+
+    def __post_init__(self):
+        bw = np.atleast_1d(np.asarray(self.bandwidth_hz, dtype=float))
+        if bw.shape == (1,):
+            bw = np.repeat(bw, 3)
+        if bw.shape != (3,) or np.any(bw <= 0.0):
+            raise ValueError("bandwidth_hz must be a positive scalar or 3-vector")
+        self.bandwidth_hz = bw
 
 
 @dataclass
@@ -143,6 +179,7 @@ class ControllerConfig:
     kd: np.ndarray | None = None
     filters: list[FilterConfig] = field(default_factory=list)
     delay_s: float = 0.0  # extra computation delay, used in frequency analysis
+    feedforward: bool = True  # apply J*alpha_cmd feedforward torque
 
     def __post_init__(self):
         for name in ("kp", "ki", "kd"):
@@ -154,6 +191,20 @@ class ControllerConfig:
                 setattr(self, name, v)
         if self.rate_hz <= 0.0:
             raise ValueError("controller rate must be positive")
+
+
+@dataclass
+class ProfilerConfig:
+    """Smooth slew profile limits. When enabled, the commanded step is
+    executed as a smooth eigenaxis slew instead of a discontinuous step."""
+
+    enabled: bool = False
+    max_rate_dps: float = 0.05  # deg/s
+    max_accel_dps2: float = 0.001  # deg/s^2
+
+    def __post_init__(self):
+        if self.max_rate_dps <= 0.0 or self.max_accel_dps2 <= 0.0:
+            raise ValueError("profiler rate and acceleration limits must be positive")
 
 
 @dataclass
@@ -173,6 +224,7 @@ class GuidanceConfig:
     mode: str = "nadir"  # "nadir" (LVLH tracking) or "inertial" (fixed quaternion)
     q_inertial: np.ndarray = field(default_factory=lambda: np.array([1.0, 0, 0, 0]))
     step: StepConfig = field(default_factory=StepConfig)
+    profiler: ProfilerConfig = field(default_factory=ProfilerConfig)
 
     def __post_init__(self):
         if self.mode not in ("nadir", "inertial"):
@@ -227,7 +279,8 @@ def from_dict(raw: dict) -> Config:
 
     guid_raw = dict(raw.get("guidance", {}))
     step = StepConfig(**guid_raw.pop("step", {}))
-    guidance = GuidanceConfig(step=step, **guid_raw)
+    profiler = ProfilerConfig(**guid_raw.pop("profiler", {}))
+    guidance = GuidanceConfig(step=step, profiler=profiler, **guid_raw)
 
     env_raw = dict(raw.get("environment", {}))
     srp = SrpConfig(**env_raw.pop("srp", {}))

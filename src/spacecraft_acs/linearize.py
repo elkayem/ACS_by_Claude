@@ -136,12 +136,20 @@ def analyze_axis(config: Config, axis: int, f_min=1e-4, f_max=None, n_points=400
             cl_bandwidth_hz = freq_hz[first_below_after[0]]
 
     # Peak open-loop gain around each flexible resonance (gain-stabilization
-    # check). The coupled free-free pole sits above the cantilever frequency,
-    # so take the peak in a window from the cantilever frequency upward.
+    # check): |L| peak within +/-15% of the coupled (free-free) frequency,
+    # which sits above the cantilever frequency by sqrt(J/(J - l^2)). The
+    # +/-15% window represents modal frequency uncertainty the notches must
+    # cover. Modes with negligible participation on this axis produce no
+    # resonance in this loop and are skipped.
+    j_axis = config.spacecraft.inertia[axis, axis]
     mode_gain_db = []
     for m in config.spacecraft.modes:
-        window = (freq_hz >= 0.95 * m.freq_hz) & (freq_hz <= 1.6 * m.freq_hz)
-        mode_gain_db.append((m.freq_hz, float(np.max(mag_db[window]))))
+        l_ax = m.participation[axis]
+        if l_ax**2 / j_axis < 1e-4:
+            continue
+        f_coupled = m.freq_hz * np.sqrt(j_axis / (j_axis - l_ax**2))
+        window = (freq_hz >= 0.85 * f_coupled) & (freq_hz <= 1.15 * f_coupled)
+        mode_gain_db.append((f_coupled, float(np.max(mag_db[window]))))
 
     return AxisFrequencyData(
         axis=axis,
@@ -180,7 +188,10 @@ def report(data: list[AxisFrequencyData]) -> str:
         lines.append(f"  closed-loop peaks: Mt = {d.cl_peak_db:.1f} dB, Ms = {d.sens_peak_db:.1f} dB")
         for f_mode, g_mode in d.mode_gain_db:
             status = "gain-stabilized" if g_mode < -6.0 else "NOT gain-stabilized (check phase)"
-            lines.append(f"  flex mode {f_mode:.2f} Hz: |L| = {g_mode:.1f} dB ({status})")
+            lines.append(
+                f"  flex mode at {f_mode:.3f} Hz (coupled, +/-15%): "
+                f"|L| = {g_mode:.1f} dB ({status})"
+            )
         unstable = [p for p in d.cl_poles if p.real > 1e-9]
         if unstable:
             lines.append(f"  WARNING: {len(unstable)} unstable closed-loop pole(s)!")

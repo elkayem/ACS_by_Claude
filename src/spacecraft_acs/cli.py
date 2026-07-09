@@ -46,6 +46,43 @@ def cmd_step(args) -> int:
     return 0
 
 
+def cmd_compare(args) -> int:
+    """Profiled slew with acceleration feedforward vs raw step without."""
+    import copy
+
+    base = config_mod.load(args.config)
+
+    cfg_prof = copy.deepcopy(base)
+    cfg_prof.guidance.profiler.enabled = True
+    cfg_prof.controller.feedforward = True
+
+    cfg_step = copy.deepcopy(base)
+    cfg_step.guidance.profiler.enabled = False
+    cfg_step.controller.feedforward = False
+
+    # Make sure the run covers the whole profile plus settling time
+    from .guidance import Guidance
+
+    slew_dur = Guidance(cfg_prof.guidance, cfg_prof.orbit_rate).slew_duration
+    t_needed = cfg_prof.guidance.step.time_s + slew_dur + 400.0
+    for cfg in (cfg_prof, cfg_step):
+        cfg.simulation.duration_s = max(cfg.simulation.duration_s, t_needed)
+
+    print(
+        f"Comparing a {base.guidance.step.angle_deg:.1f} deg maneuver: "
+        f"profiled slew ({slew_dur:.0f} s) + feedforward vs raw step...\n"
+    )
+    res_prof = simulate.run(cfg_prof)
+    res_step = simulate.run(cfg_step)
+
+    print(simulate.maneuver_metrics(res_prof, "profiled slew + feedforward"))
+    print()
+    print(simulate.maneuver_metrics(res_step, "raw step, no feedforward"))
+    path = plotting.plot_slew_comparison(res_prof, res_step, args.output_dir)
+    print(f"\nwrote {path}")
+    return 0
+
+
 def cmd_freq(args) -> int:
     cfg = config_mod.load(args.config)
     print("Linearizing about the nadir-pointing operating point...\n")
@@ -78,6 +115,13 @@ def main(argv=None) -> int:
     )
     _add_common(p_freq)
     p_freq.set_defaults(func=cmd_freq)
+
+    p_cmp = sub.add_parser(
+        "compare",
+        help="profiled slew with feedforward vs raw step without, same maneuver",
+    )
+    _add_common(p_cmp)
+    p_cmp.set_defaults(func=cmd_compare)
 
     args = parser.parse_args(argv)
     return args.func(args)

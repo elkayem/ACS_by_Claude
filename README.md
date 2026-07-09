@@ -22,15 +22,22 @@ pytest            # run the verification suite
 ## Usage
 
 ```sh
-acs step --config config/default.yaml --output-dir output   # time domain
-acs freq --config config/default.yaml --output-dir output   # frequency domain
+acs step    --config config/default.yaml --output-dir output  # time domain
+acs freq    --config config/default.yaml --output-dir output  # frequency domain
+acs compare --config config/default.yaml --output-dir output  # slew vs step
 ```
 
 `acs step` runs the nonlinear closed-loop simulation of a commanded attitude
-step (default: 0.5° about roll while nadir tracking), prints rise time /
+step (default: 1° about roll while nadir tracking), prints rise time /
 overshoot / settling time and steady-state pointing, and writes a time-history
 plot (attitude error, rates, wheel torque and momentum vs. limits, modal
-response).
+response). With `guidance.profiler.enabled: true` the same command is executed
+as a smooth profiled slew instead.
+
+`acs compare` runs the configured maneuver twice — once as a profiled slew
+with acceleration feedforward, once as a raw quaternion step without — and
+overlays attitude error, rate, torque, and modal response, with a metrics
+table (settling time, overshoot, peak torque, flex ringing).
 
 `acs freq` linearizes each axis about the nadir-pointing operating point and
 writes open-loop Bode and Nichols plots with the gain and phase margins called
@@ -75,6 +82,14 @@ poles at the coupled free-free frequency `ω√(J/(J−l²))` above it.
 - **Guidance** — nadir-pointing LVLH tracking at the GEO orbit rate (default)
   or inertial hold; attitude commands are quaternions and step offsets are
   applied about a configurable axis
+- **Slew profiler** (`profiler.py`) — smooth eigenaxis reorientation with a
+  cycloidal (versine) acceleration S-curve: attitude, rate, and acceleration
+  are all continuous, respecting configurable `max_rate_dps` /
+  `max_accel_dps2` limits with a constant-rate cruise for long slews.
+  Guidance returns `(q_cmd, ω_cmd, α_cmd)`; with `controller.feedforward:
+  true` the sim applies `J·α_cmd` feedforward torque (added after the
+  structural filters), so the feedback loop only has to absorb tracking
+  error, not the maneuver itself
 
 ### Controller (`controller.py`)
 
@@ -107,16 +122,23 @@ the linear gain margin against nonlinear divergence.
 
 `config/default.yaml` models a large GEO comsat: 8000/4500/6500 kg·m²
 inertia, four array modes at 0.10–0.55 Hz with ζ = 0.005 (25%/14%/19% modal
-inertia fraction in roll/pitch/yaw), 0.2 N·m / 68 N·m·s wheels, 0.02 Hz
-design bandwidth at 4 Hz sampling. The filter set (three notches at the
-*coupled* mode frequencies + 0.6 Hz roll-off) gain-stabilizes every mode by
-≥ 14 dB and yields GM ≈ 10–11 dB, PM ≈ 31°, closed-loop BW ≈ 52 mHz, and
-1–2 arcsec RMS steady-state pointing per axis.
+inertia fraction in roll/pitch/yaw), 0.2 N·m / 68 N·m·s wheels, 4 Hz
+sampling.
+
+The control design uses **per-axis bandwidths** — each axis runs as fast as
+its own first flexible mode allows: 30 mHz roll (limited by the 0.116 Hz
+coupled bending mode), 55 mHz pitch, 38 mHz yaw. Notches are assigned only to
+the axis whose mode they stabilize, so no axis pays crossover phase lag for
+another axis's filter, and notch widths are sized to hold each resonance
+below about −12 dB across ±15% modal frequency uncertainty. Result: GM
+15–20 dB, PM 35–44°, closed-loop BW 67/153/93 mHz, every flex mode
+gain-stabilized by ≥ 12 dB, and arcsec-level RMS steady-state pointing.
 
 Design note: with these gains the wheels saturate for attitude errors above
-~0.1°, so large step commands become torque-limited slews with
-saturation-driven overshoot (~76% for a 10° step vs ~23% for 0.5°). That is
-physics, not a bug; feedforward slew profiling would be the v2 fix.
+a few hundredths of a degree, so any sizable raw step becomes a
+torque-limited slew with saturation-driven overshoot. Use the slew profiler
+with feedforward for large-angle maneuvers (`acs compare` quantifies the
+difference).
 
 ## Layout
 
@@ -127,8 +149,9 @@ src/spacecraft_acs/
   config.py                # schema + validation
   dynamics.py              # flexible-body EOM (RK4)
   actuators.py sensors.py environment.py guidance.py
-  controller.py            # discrete quaternion PID + filters
-  simulate.py              # closed-loop sim + step metrics
+  profiler.py              # smooth eigenaxis slew profile
+  controller.py            # discrete quaternion PID + filters + feedforward
+  simulate.py              # closed-loop sim + step/maneuver metrics
   linearize.py             # per-axis LTI models, margins, closed loop
   plotting.py cli.py
 tests/                     # physics + control verification suite

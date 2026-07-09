@@ -28,6 +28,7 @@ class SimResult:
     torque_cmd: np.ndarray  # (K, 3) controller output, N*m
     torque_applied: np.ndarray  # (K, 3) after wheel limits, N*m
     torque_dist: np.ndarray  # (K, 3) environment torque, N*m
+    torque_ff: np.ndarray  # (K, 3) feedforward component of torque_cmd, N*m
     att_err: np.ndarray  # (K, 3) attitude error rotation vector, rad
     config: Config = field(repr=False, default=None)
 
@@ -53,7 +54,7 @@ def run(config: Config) -> SimResult:
     n_samples = int(np.floor(config.simulation.duration_s / dt_ctrl)) + 1
 
     # Start on the initial command (nadir attitude) with matching body rate
-    q0_cmd, w0_cmd = guidance.command(0.0)
+    q0_cmd, w0_cmd, _ = guidance.command(0.0)
     x = sc.initial_state(q=q0_cmd, omega=w0_cmd)
 
     out = {
@@ -61,7 +62,7 @@ def run(config: Config) -> SimResult:
         for name, dim in [
             ("q", 4), ("omega", 3), ("h_wheel", 3), ("q_cmd", 4),
             ("torque_cmd", 3), ("torque_applied", 3), ("torque_dist", 3),
-            ("att_err", 3),
+            ("torque_ff", 3), ("att_err", 3),
         ]
     }
     out["eta"] = np.zeros((n_samples, sc.n_modes))
@@ -71,10 +72,18 @@ def run(config: Config) -> SimResult:
     saturated = False
     for k, t in enumerate(t_grid):
         q, omega, eta, eta_dot, h_w = sc.unpack(x)
-        q_cmd, omega_cmd = guidance.command(t)
+        q_cmd, omega_cmd, alpha_cmd = guidance.command(t)
         q_meas, omega_meas = sensors.measure(q, omega)
 
-        u_cmd = pid.step(q_meas, omega_meas, q_cmd, omega_cmd, freeze_integrator=saturated)
+        # Rigid-body acceleration feedforward (command frame ~ body frame at
+        # small tracking error)
+        t_ff = None
+        if config.controller.feedforward and np.any(alpha_cmd):
+            t_ff = config.spacecraft.inertia @ alpha_cmd
+        u_cmd = pid.step(
+            q_meas, omega_meas, q_cmd, omega_cmd,
+            freeze_integrator=saturated, torque_ff=t_ff,
+        )
         u_applied = wheels.apply(u_cmd, h_w)
         saturated = bool(np.any(np.abs(u_applied - u_cmd) > 1e-12))
 
@@ -91,6 +100,7 @@ def run(config: Config) -> SimResult:
         out["torque_cmd"][k] = u_cmd
         out["torque_applied"][k] = u_applied
         out["torque_dist"][k] = t_dist
+        out["torque_ff"][k] = 0.0 if t_ff is None else t_ff
         out["att_err"][k] = 2.0 * q_err[1:]
 
         if k == n_samples - 1:
@@ -123,6 +133,92 @@ class StepMetrics:
             f"settling time {fmt(self.settling_time_s, ' s')} "
             f"(from step command)"
         )
+
+
+@dataclass
+class ManeuverMetrics:
+    """Comparable quantities for a commanded reorientation, whether executed
+    as a discontinuous step or a profiled slew."""
+
+    label: str
+    angle_deg: float
+    axis: int
+    profile_duration_s: float | None  # None for a raw step
+    settling_time_s: float | None  # from command start into the settling band
+    overshoot_deg: float  # max excursion beyond the final target attitude
+    peak_tracking_err_deg: float  # max |attitude error| during the maneuver
+    peak_torque_nm: float
+    peak_mode_disp: float  # max |eta| over all modes
+    post_ringing_rms: float  # RMS of eta after maneuver end (flex ringing)
+
+    def __str__(self) -> str:
+        dur = "instantaneous" if self.profile_duration_s is None else (
+            f"{self.profile_duration_s:.0f} s profile"
+        )
+        settle = "did not settle" if self.settling_time_s is None else (
+            f"{self.settling_time_s:.0f} s"
+        )
+        return (
+            f"{self.label}: {self.angle_deg:.1f} deg about {'xyz'[self.axis]} "
+            f"({dur})\n"
+            f"  settling time (from command): {settle}\n"
+            f"  overshoot beyond target:      {self.overshoot_deg * 3600:.1f} arcsec "
+            f"({100 * self.overshoot_deg / abs(self.angle_deg):.1f} % of maneuver)\n"
+            f"  peak pointing error:          {self.peak_tracking_err_deg:.3f} deg\n"
+            f"  peak wheel torque:            {self.peak_torque_nm:.3f} N*m\n"
+            f"  peak modal displacement:      {self.peak_mode_disp:.3g}\n"
+            f"  post-maneuver modal RMS:      {self.post_ringing_rms:.3g}"
+        )
+
+
+def maneuver_metrics(result: SimResult, label: str) -> ManeuverMetrics:
+    """Metrics for the configured maneuver (step or profiled slew)."""
+    cfg = result.config
+    step = cfg.guidance.step
+    axis = int(np.argmax(np.abs(step.axis)))
+    t0 = step.time_s
+    from .guidance import Guidance  # local import to avoid a cycle
+
+    profile_dur = Guidance(cfg.guidance, cfg.orbit_rate).slew_duration
+    t_man_end = t0 + (profile_dur if profile_dur is not None else 0.0)
+
+    mask = result.t >= t0
+    t = result.t[mask] - t0
+    err = result.att_err_deg[mask, axis]
+
+    # Overshoot beyond the final target: attitude error opposite the approach
+    # direction after the command has reached its final value. The error
+    # during approach has sign -sign(angle); excursion past target flips it.
+    after_end = t >= (t_man_end - t0)
+    sign = np.sign(step.angle_deg)
+    overshoot = max(0.0, float(np.max(sign * err[after_end], initial=0.0)))
+
+    band = cfg.simulation.settling_band * abs(step.angle_deg)
+    outside = np.nonzero(np.abs(err) > band)[0]
+    if outside.size == 0:
+        settling = 0.0
+    elif outside[-1] + 1 < len(t):
+        settling = float(t[outside[-1] + 1])
+    else:
+        settling = None
+
+    during = (result.t >= t0) & (result.t <= t_man_end + 1e-9) if profile_dur \
+        else mask
+    ringing_win = result.t >= (t_man_end + 60.0)
+    return ManeuverMetrics(
+        label=label,
+        angle_deg=step.angle_deg,
+        axis=axis,
+        profile_duration_s=profile_dur,
+        settling_time_s=settling,
+        overshoot_deg=overshoot,
+        peak_tracking_err_deg=float(np.max(np.abs(result.att_err_deg[during, axis]))),
+        peak_torque_nm=float(np.max(np.abs(result.torque_applied[mask]))),
+        peak_mode_disp=float(np.max(np.abs(result.eta[mask]))),
+        post_ringing_rms=float(np.sqrt(np.mean(result.eta[ringing_win] ** 2)))
+        if np.any(ringing_win)
+        else 0.0,
+    )
 
 
 def step_metrics(result: SimResult) -> StepMetrics:

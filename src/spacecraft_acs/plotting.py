@@ -80,6 +80,62 @@ def plot_step_response(result, metrics, output_dir: Path) -> Path:
     return _save(fig, output_dir, "step_response")
 
 
+def plot_slew_comparison(res_prof, res_step, output_dir: Path) -> Path:
+    """Overlay: profiled slew with feedforward vs discontinuous step without."""
+    cfg = res_prof.config
+    axis = int(np.argmax(np.abs(cfg.guidance.step.axis)))
+    t0 = cfg.guidance.step.time_s
+    runs = [
+        (res_prof, "#2980b9", "profiled slew + feedforward"),
+        (res_step, "#c0392b", "raw step, no feedforward"),
+    ]
+    fig, axes = plt.subplots(4, 1, figsize=(10, 12), sharex=True)
+
+    ax = axes[0]
+    for res, color, label in runs:
+        ax.plot(res.t, res.att_err_deg[:, axis], color=color, label=label)
+    ax.axvline(t0, color="0.5", ls=":", lw=0.8)
+    ax.set_ylabel(f"attitude error [{AXIS_LABELS[axis]}, deg]")
+    ax.legend(loc="upper right", fontsize=9)
+    ax.set_title(
+        f"{cfg.guidance.step.angle_deg:.1f}° maneuver about {'xyz'[axis]} — "
+        "profiled slew with acceleration feedforward vs raw quaternion step",
+        fontsize=10,
+    )
+
+    ax = axes[1]
+    for res, color, _ in runs:
+        ax.plot(res.t, np.rad2deg(res.omega[:, axis]) * 3600.0, color=color)
+    ax.set_ylabel("body rate [deg/hr]")
+
+    ax = axes[2]
+    for res, color, _ in runs:
+        ax.plot(res.t, res.torque_applied[:, axis], color=color)
+    ax.plot(
+        res_prof.t, res_prof.torque_ff[:, axis],
+        color="#2980b9", ls="--", lw=0.9, label="feedforward component",
+    )
+    for s in (1, -1):
+        ax.axhline(s * cfg.wheels.max_torque, color="0.5", ls="--", lw=0.8)
+    ax.set_ylabel("wheel torque [N·m]")
+    ax.legend(loc="upper right", fontsize=8)
+
+    ax = axes[3]
+    for res, color, _ in runs:
+        worst = np.argmax(np.max(np.abs(res.eta), axis=0))
+        ax.plot(
+            res.t, res.eta[:, worst], color=color,
+            label=f"mode {worst + 1} ({cfg.spacecraft.modes[worst].freq_hz:.2f} Hz)",
+        )
+    ax.set_ylabel("worst modal displacement\n[√kg·m·rad]")
+    ax.set_xlabel("time [s]")
+    ax.legend(loc="upper right", fontsize=8)
+
+    for ax in axes:
+        ax.grid(alpha=0.3)
+    return _save(fig, output_dir, "slew_vs_step")
+
+
 def plot_bode(freq_data, output_dir: Path) -> list[Path]:
     """Open-loop Bode plots, one figure per axis, margins annotated."""
     paths = []

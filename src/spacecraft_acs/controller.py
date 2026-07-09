@@ -50,18 +50,19 @@ def filter_tf(fc: FilterConfig) -> tuple[np.ndarray, np.ndarray]:
 
 
 class _Biquad:
-    """One discrete second-order section applied independently to 3 axes."""
+    """One discrete second-order section applied to its configured axes."""
 
     def __init__(self, fc: FilterConfig, dt: float):
         num, den = filter_tf(fc)
         numd, dend, _ = signal.cont2discrete((num, den), dt, method="bilinear")
         self.b = np.atleast_1d(np.squeeze(numd))
         self.a = np.atleast_1d(np.squeeze(dend))
+        self.axes = fc.axes
         self.zi = np.zeros((3, max(len(self.a), len(self.b)) - 1))
 
     def step(self, u: np.ndarray) -> np.ndarray:
-        y = np.empty(3)
-        for i in range(3):
+        y = u.copy()
+        for i in self.axes:
             yi, self.zi[i] = signal.lfilter(self.b, self.a, [u[i]], zi=self.zi[i])
             y[i] = yi[0]
         return y
@@ -94,11 +95,15 @@ class QuaternionPID:
         q_cmd: np.ndarray,
         omega_cmd: np.ndarray,
         freeze_integrator: bool = False,
+        torque_ff: np.ndarray | None = None,
     ) -> np.ndarray:
         """Compute the body-torque command for one sample.
 
         freeze_integrator implements anti-windup: the caller sets it when the
-        actuators saturated on the previous sample.
+        actuators saturated on the previous sample. torque_ff is an optional
+        feedforward torque (e.g. J·α_cmd during a profiled slew); it is added
+        after the structural filters so the feedback path alone is shaped by
+        them and the feedforward stays undelayed.
         """
         q_err = qt.error(q_cmd, q_meas)
         theta = 2.0 * q_err[1:]
@@ -109,6 +114,8 @@ class QuaternionPID:
         u = -(self.kp * theta + self.ki * self.integral + self.kd * omega_err)
         for f in self.filters:
             u = f.step(u)
+        if torque_ff is not None:
+            u = u + torque_ff
         return u
 
     def analog_tf(self, axis: int) -> tuple[np.ndarray, np.ndarray]:
@@ -119,6 +126,8 @@ class QuaternionPID:
         num = np.array([self.kd[axis], self.kp[axis], self.ki[axis]])
         den = np.array([1.0, 0.0])
         for fc in self.cfg.filters:
+            if axis not in fc.axes:
+                continue
             fn, fd = filter_tf(fc)
             num = np.polymul(num, fn)
             den = np.polymul(den, fd)

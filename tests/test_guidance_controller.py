@@ -20,34 +20,34 @@ def make_pid(kp=None, ki=None, kd=None, filters=(), rate_hz=4.0):
     return QuaternionPID(cfg, J_DIAG)
 
 
+def assert_kinematically_consistent(g, t, dt=0.5, atol=1e-12):
+    """Central-difference q̇_cmd must equal ½ q_cmd ⊗ [0, ω_cmd], and
+    central-difference ω̇_cmd must equal α_cmd."""
+    q0, w0, a0 = g.command(t)
+    q_m, w_m, _ = g.command(t - dt)
+    q_p, w_p, _ = g.command(t + dt)
+    assert np.allclose((q_p - q_m) / (2.0 * dt), qt.derivative(q0, w0), atol=atol)
+    assert np.allclose((w_p - w_m) / (2.0 * dt), a0, atol=atol)
+
+
 def test_nadir_command_kinematic_consistency():
-    """q̇_cmd from finite difference must equal ½ q_cmd ⊗ [0, ω_cmd]."""
     g = Guidance(GuidanceConfig(step=StepConfig(time_s=1e9)), GEO_ORBIT_RATE)
-    t, dt = 5000.0, 0.5
-    q0, w0 = g.command(t)
-    q_m, _ = g.command(t - dt)
-    q_p, _ = g.command(t + dt)
-    qdot_fd = (q_p - q_m) / (2.0 * dt)  # central difference, O(dt^2) accurate
-    assert np.allclose(qdot_fd, qt.derivative(q0, w0), atol=1e-12)
+    assert_kinematically_consistent(g, 5000.0)
     # After a quarter GEO orbit the pitch attitude has advanced by 90 deg
     quarter = 0.5 * np.pi / GEO_ORBIT_RATE
-    q_quarter, _ = g.command(quarter)
+    q_quarter, _, _ = g.command(quarter)
     assert np.isclose(qt.rotation_angle(q_quarter), np.pi / 2)
 
 
 def test_step_command_offset():
     step = StepConfig(axis=[1.0, 0, 0], angle_deg=10.0, time_s=100.0)
     g = Guidance(GuidanceConfig(step=step), GEO_ORBIT_RATE)
-    q_before, _ = g.command(99.9)
-    q_after, w_after = g.command(100.0)
+    q_before, _, _ = g.command(99.9)
+    q_after, _, _ = g.command(100.0)
     q_delta = qt.error(q_before, q_after)
     assert np.isclose(np.rad2deg(qt.rotation_angle(q_delta)), 10.0)
     # Kinematic consistency must also hold after the step
-    t, dt = 101.0, 0.5
-    q0, w0 = g.command(t)
-    q_m, _ = g.command(t - dt)
-    q_p, _ = g.command(t + dt)
-    assert np.allclose((q_p - q_m) / (2.0 * dt), qt.derivative(q0, w0), atol=1e-12)
+    assert_kinematically_consistent(g, 101.0)
 
 
 def test_proportional_action():

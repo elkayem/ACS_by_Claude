@@ -41,13 +41,17 @@ environment:
     harmonic_amplitude: [5.0e-5, 0.0, 5.0e-5]     # N*m at orbit rate
 
 controller:
-  rate_hz: 4.0   # discrete execution rate
-  delay_s: 0.0   # additional computation delay (frequency analysis)
+  rate_hz: 4.0       # discrete execution rate
+  delay_s: 0.0       # additional computation delay (frequency analysis)
+  feedforward: true  # J*alpha_cmd feedforward during profiled slews
   # Gains are computed per axis from the design rule (Kp = J*wn^2,
   # Kd = 2*zeta*J*wn, Ki = Kp*wn/integral_time_factor) unless kp/ki/kd are
   # given explicitly below.
+  # Per-axis bandwidths: each axis runs as fast as its own first flexible
+  # mode allows. Roll is limited by the 0.116 Hz coupled bending mode; pitch
+  # sees no mode below 0.377 Hz and runs ~2x faster.
   design:
-    bandwidth_hz: 0.02
+    bandwidth_hz: [0.030, 0.055, 0.038]  # roll, pitch, yaw
     damping: 0.7
     integral_time_factor: 10.0
   # kp: [...]   # explicit per-axis gains override the design rule
@@ -55,25 +59,36 @@ controller:
   # kd: [...]
   # Structural filters: notches gain-stabilize each significant flexible
   # resonance at its coupled (free-free) frequency — the cantilever mode
-  # frequency shifted up by sqrt(J/(J - l^2)) — and a high lowpass rolls off
-  # gain above the control band at small phase cost at crossover.
+  # frequency shifted up by sqrt(J/(J - l^2)). Each notch is assigned only
+  # to the axis that needs it, so no axis pays phase lag at crossover for
+  # another axis's mode. Notch width (damping) is sized to hold the mode
+  # peak below about -12 dB across +/-15% modal frequency uncertainty.
   filters:
-    - {type: notch, freq_hz: 0.116, damping: 0.5, depth_db: 30.0}  # roll 1st bending (coupled)
-    - {type: notch, freq_hz: 0.166, damping: 0.5, depth_db: 20.0}  # yaw 1st bending (coupled)
-    - {type: notch, freq_hz: 0.374, damping: 0.5, depth_db: 15.0}  # pitch torsion (coupled)
-    - {type: lowpass, freq_hz: 0.6, damping: 0.7}                  # high-frequency roll-off
+    - {type: notch, freq_hz: 0.116,  damping: 0.40, depth_db: 40.0, axes: roll}   # roll 1st bending (coupled)
+    - {type: notch, freq_hz: 0.5615, damping: 0.25, depth_db: 25.0, axes: roll}   # roll 2nd bending (coupled)
+    - {type: notch, freq_hz: 0.166,  damping: 0.35, depth_db: 32.0, axes: yaw}    # yaw 1st bending (coupled)
+    - {type: notch, freq_hz: 0.374,  damping: 0.25, depth_db: 27.0, axes: pitch}  # pitch torsion (coupled)
+    - {type: lowpass, freq_hz: 0.7, damping: 0.7}                                 # high-frequency roll-off
 
 guidance:
   mode: nadir   # track the LVLH frame (z to nadir) at orbit rate
   # mode: inertial with q_inertial: [w, x, y, z] holds a fixed attitude
   # Note on step size: with the default gains the wheels saturate for
-  # attitude errors above ~0.1 deg, so large steps become torque-limited
-  # slews with saturation-driven overshoot (e.g. ~76% at 10 deg). 0.5 deg
-  # stays close to the linear regime and shows the loop dynamics cleanly.
+  # attitude errors above a few hundredths of a degree, so any sizable raw
+  # step becomes a torque-limited slew with saturation-driven overshoot.
+  # Use the slew profiler (below) for large-angle maneuvers.
   step:
-    axis: [1.0, 0.0, 0.0]  # body axis of the commanded attitude step
-    angle_deg: 0.5
+    axis: [1.0, 0.0, 0.0]  # body axis of the commanded attitude step / slew
+    angle_deg: 1.0
     time_s: 100.0
+  # Smooth slew profiler: when enabled, the step above is executed as an
+  # eigenaxis slew with a cycloidal (continuous-acceleration) profile, and
+  # the controller applies J*alpha_cmd acceleration feedforward (see
+  # controller.feedforward). When disabled the step is discontinuous.
+  profiler:
+    enabled: false
+    max_rate_dps: 0.05      # deg/s
+    max_accel_dps2: 0.001   # deg/s^2 (J*a ~ 0.14 N*m on roll, inside wheel limit)
 
 simulation:
   duration_s: 900.0
