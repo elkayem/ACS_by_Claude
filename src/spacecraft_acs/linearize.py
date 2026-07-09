@@ -1,11 +1,16 @@
-"""Per-axis linearization and frequency-domain analysis.
+"""Linearization and frequency-domain analysis.
 
-The nonlinear model is linearized about the nadir-pointing operating point.
-For a near-diagonal inertia tensor the three axes decouple into SISO loops
+The nonlinear model is linearized about the nadir-pointing operating point
 (orbit-rate gyroscopic coupling, ~7e-5 rad/s, is negligible at control
-frequencies). Cross-axis flexible coupling through off-axis participation
-components is likewise neglected per axis; this is the standard preliminary-
-design simplification and is noted in the README.
+frequencies). Margins are computed loop-at-a-time on the coupled 3-axis
+flexible plant: one axis's loop is broken for measurement while the other
+two remain closed, so a mode that couples into several axes is credited with
+the damping the closed loops provide — the honest margin for a coupled
+flexible plant, and it matters for dispersed plants whose participation
+vectors mix axes. Closing the measured loop then yields the full coupled
+closed-loop poles, so the stability verdict matches the nonlinear sim's
+dynamics by construction. `plant_ss` (single-axis SISO plant) is retained
+for reference and tests.
 """
 
 from __future__ import annotations
@@ -58,19 +63,86 @@ def plant_ss(config: Config, axis: int) -> control.StateSpace:
     return control.ss(a, b, c, 0.0)
 
 
-def controller_tf(config: Config, axis: int, with_delay: bool = True) -> control.TransferFunction:
+def coupled_plant_ss(config: Config) -> control.StateSpace:
+    """Full 3-axis torque -> attitude plant: states [θ(3), ω(3), η, η̇] with
+    the complete inertia tensor and participation matrix, so cross-axis
+    flexible coupling is retained."""
+    sc = config.spacecraft
+    j = sc.inertia
+    l_mat = sc.participation_matrix
+    n = l_mat.shape[1]
+    wn = sc.mode_freqs
+    zeta = sc.mode_dampings
+
+    m = np.block([[j, l_mat], [l_mat.T, np.eye(n)]])
+    m_inv = np.linalg.inv(m)
+
+    nx = 6 + 2 * n  # [theta(3), omega(3), eta(n), eta_dot(n)]
+    a = np.zeros((nx, nx))
+    b = np.zeros((nx, 3))
+    a[0:3, 3:6] = np.eye(3)  # theta_dot = omega
+    a[6 : 6 + n, 6 + n :] = np.eye(n)  # eta_dot
+    # [omega_dot; eta_ddot] = m_inv @ [T; -2 Z Omega eta_dot - Omega^2 eta]
+    rhs_a = np.zeros((3 + n, nx))
+    rhs_a[3:, 6 : 6 + n] = -np.diag(wn**2)
+    rhs_a[3:, 6 + n :] = -np.diag(2.0 * zeta * wn)
+    accel_rows = m_inv @ rhs_a
+    a[3:6, :] = accel_rows[:3, :]
+    a[6 + n :, :] = accel_rows[3:, :]
+    rhs_b = np.zeros((3 + n, 3))
+    rhs_b[:3, :] = np.eye(3)
+    accel_b = m_inv @ rhs_b
+    b[3:6, :] = accel_b[:3, :]
+    b[6 + n :, :] = accel_b[3:, :]
+
+    c = np.zeros((3, nx))
+    c[:, 0:3] = np.eye(3)
+    return control.ss(a, b, c, np.zeros((3, 3)))
+
+
+def broken_loop_ss(config: Config, axis: int, f_max: float = 100.0) -> control.StateSpace:
+    """Loop-at-a-time open loop for one axis: the coupled 3-axis plant with
+    the OTHER two control loops closed, times this axis's controller. This is
+    the honest margin for a coupled flexible plant — a mode that couples into
+    several axes is actively damped by the closed loops while one loop is
+    broken for measurement."""
+    g = coupled_plant_ss(config)
+    parts = []
+    for j in range(3):
+        if j == axis:
+            parts.append(control.ss([], [], [], 0.0))  # broken loop
+        else:
+            parts.append(control.ss(controller_tf(config, j, f_max=f_max)))
+    c_other = control.append(*parts)
+    g_closed = control.feedback(g, c_other)  # other loops closed
+    c_axis = control.ss(controller_tf(config, axis, f_max=f_max))
+    return c_axis * g_closed[axis, axis]
+
+
+def controller_tf(
+    config: Config, axis: int, with_delay: bool = True, f_max: float = 100.0
+) -> control.TransferFunction:
     """Controller TF (attitude error -> torque) including PID, filters, and
-    the sampling/computation delay as a 2nd-order Padé approximation."""
+    the sampling/computation delay as a 2nd-order Padé approximation.
+
+    If the result is improper (e.g. pure PD with no roll-off filters), far
+    poles at 50*f_max are appended so the TF converts to state space; their
+    phase contribution below f_max is negligible."""
     pid = QuaternionPID(config.controller, np.diag(config.spacecraft.inertia))
     num, den = pid.analog_tf(axis)
-    c = control.tf(num, den)
     if with_delay:
         # ZOH contributes ~T/2 of effective delay at loop frequencies
         t_delay = 0.5 / config.controller.rate_hz + config.controller.delay_s
         if t_delay > 0.0:
             pade_num, pade_den = control.pade(t_delay, 2)
-            c = c * control.tf(pade_num, pade_den)
-    return c
+            num = np.polymul(num, pade_num)
+            den = np.polymul(den, pade_den)
+    deficit = (len(num) - 1) - (len(den) - 1)
+    if deficit > 0:
+        w_far = 2.0 * np.pi * 50.0 * f_max
+        for _ in range(deficit):
+            den = np.polymul(den, np.array([1.0 / w_far, 1.0]))
+    return control.tf(num, den)
 
 
 @dataclass
@@ -101,9 +173,11 @@ def analyze_axis(config: Config, axis: int, f_min=1e-4, f_max=None, n_points=400
         )
     w = 2.0 * np.pi * np.logspace(np.log10(f_min), np.log10(f_max), n_points)
 
-    g = plant_ss(config, axis)
-    c = controller_tf(config, axis)
-    loop = control.minreal(c * control.tf(g), verbose=False)
+    # Loop-at-a-time open loop on the coupled plant (other loops closed),
+    # built entirely in state space: polynomial (transfer-function)
+    # arithmetic on the flexible plant overflows float64 coefficient ranges
+    # and produces spurious poles for strongly dispersed plants.
+    loop = broken_loop_ss(config, axis, f_max=f_max)
 
     resp = loop(1j * w)
     mag_db = 20.0 * np.log10(np.abs(resp))
@@ -115,14 +189,16 @@ def analyze_axis(config: Config, axis: int, f_min=1e-4, f_max=None, n_points=400
     ref_idx = int(np.argmin(np.abs(mag_db))) if np.any(mag_db > 0) else 0
     phase_deg -= 360.0 * np.ceil(phase_deg[ref_idx] / 360.0)
 
-    gm, pm, wcg, wcp = control.margin(loop)
+    # Margins from the frequency response (FRD) rather than polynomial root
+    # finding, for the same numerical-robustness reason as above
+    gm, pm, wcg, wcp = control.margin(control.frd(loop, w))
     gm_db = 20.0 * np.log10(gm) if gm not in (None, np.inf) and gm > 0 else None
     pm_deg = pm if pm not in (None, np.inf) else None
     phase_crossover_hz = wcg / (2 * np.pi) if wcg not in (None, np.inf) and wcg > 0 else None
     gain_crossover_hz = wcp / (2 * np.pi) if wcp not in (None, np.inf) and wcp > 0 else None
 
-    t_cl = control.feedback(loop, 1)
-    s_cl = control.feedback(1, loop)
+    t_cl = control.feedback(loop, 1)  # state space in, state space out
+    s_cl = control.feedback(control.ss([], [], [], 1.0), loop)
     cl_mag_db = 20.0 * np.log10(np.abs(t_cl(1j * w)))
     sens_mag_db = 20.0 * np.log10(np.abs(s_cl(1j * w)))
 

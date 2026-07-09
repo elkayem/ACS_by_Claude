@@ -122,3 +122,18 @@ simulation:
   duration_s: 900.0
   substeps: 10          # RK4 integration steps per controller sample
   settling_band: 0.02   # settling criterion, fraction of step amplitude
+  initial_wheel_momentum: [0.0, 0.0, 0.0]  # N*m*s
+
+# Plant-dispersion Monte Carlo (`acs mc`): the controller stays fixed at its
+# as-designed values while the plant is dispersed (uniform distributions,
+# percentages are half-widths). Scored against GM >= 6 dB, PM >= 30 deg,
+# mode peak <= -6 dB, closed-loop stable.
+monte_carlo:
+  n_runs: 100
+  seed: 1
+  time_domain: false    # also run the nonlinear sim per sample (slower)
+  dispersions:
+    inertia_pct: 10.0
+    mode_freq_pct: 15.0            # matches the notch-width design assumption
+    mode_damping_range: [0.002, 0.01]
+    participation_pct: 20.0

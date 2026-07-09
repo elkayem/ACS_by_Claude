@@ -25,6 +25,8 @@ pytest            # run the verification suite
 acs step    --config config/default.yaml --output-dir output  # time domain
 acs freq    --config config/default.yaml --output-dir output  # frequency domain
 acs compare --config config/default.yaml --output-dir output  # slew vs step
+acs unload  --config config/default.yaml --output-dir output  # momentum dump
+acs mc      --config config/default.yaml --output-dir output  # Monte Carlo
 ```
 
 `acs step` runs the nonlinear closed-loop simulation of a commanded attitude
@@ -38,6 +40,17 @@ as a smooth profiled slew instead.
 with acceleration feedforward, once as a raw quaternion step without — and
 overlays attitude error, rate, torque, and modal response, with a metrics
 table (settling time, overshoot, peak torque, flex ringing).
+
+`acs unload` demonstrates a thruster momentum dump during nadir hold: wheel
+momentum decay through the trigger/target thresholds, the quantized pulse
+train, and the pointing transient (arcsec-level with wheel feedforward
+compensation of each pulse).
+
+`acs mc` runs the plant-dispersion Monte Carlo (`--runs N`, `--time-domain`):
+the controller stays fixed while inertia, mode frequencies, damping, and
+participation are dispersed; each sample is scored on loop-at-a-time margins,
+worst flexible-mode peak, and coupled closed-loop stability, with a
+scatter/histogram plot and CSV export.
 
 `acs freq` linearizes each axis about the nadir-pointing operating point and
 writes open-loop Bode and Nichols plots with the gain and phase margins called
@@ -76,9 +89,18 @@ poles at the coupled free-free frequency `ω√(J/(J−l²))` above it.
   (`ideal: true` bypasses)
 - **Environment** — gravity-gradient torque `3n²(ô₃ × J ô₃)` and SRP
   (constant + orbit-rate harmonic body torque)
-- **Sensors** — star tracker attitude noise, gyro rate noise + bias, sampled
-  at the controller rate (`perfect: true` bypasses; no estimator in v1 — a
-  MEKF is a natural extension)
+- **Sensors** — star tracker attitude noise, gyro rate noise + bias with
+  configurable bias random walk, sampled at the controller rate
+  (`perfect: true` bypasses)
+- **MEKF estimator** (`estimator.py`) — 6-state multiplicative EKF (attitude
+  error + gyro bias): gyro propagation every controller cycle, star tracker
+  updates decimated to their own rate (default 1 Hz), Joseph-form update.
+  Default-on; delivers 1.4–3.8 arcsec attitude knowledge vs 10 arcsec raw ST
+  and a quieter torque command
+- **Momentum management** (`momentum.py`) — threshold-triggered thruster
+  unload (the constant SRP pitch torque accumulates ~4.3 N·m·s/day):
+  bang-bang-with-deadband law, minimum-impulse-bit pulse quantization via an
+  impulse-debt accumulator, and wheel feedforward compensation of each pulse
 - **Guidance** — nadir-pointing LVLH tracking at the GEO orbit rate (default)
   or inertial hold; attitude commands are quaternions and step offsets are
   applied about a configurable axis
@@ -105,18 +127,24 @@ Quaternion-error feedback PID executed at a configurable discrete rate
 
 ### Frequency-domain analysis (`linearize.py`)
 
-Per-axis SISO linearization about nadir: plant state space `[θ, ω, η, η̇]`
-from the axis inertia and participation row, controller TF from the PID +
-filters, and the sampling/computation delay modeled as a 2nd-order Padé
-approximation of `T/2 + delay_s`. Margins are computed on
-`L(s) = C(s)·G(s)`.
+Margins are computed **loop-at-a-time on the coupled 3-axis flexible
+plant**: the full `[θ(3), ω(3), η, η̇]` state space (complete inertia tensor
+and participation matrix) with one axis's loop broken for measurement while
+the other two remain closed. A mode that couples into several axes is
+therefore credited with the damping the closed loops provide, and closing
+the measured loop yields the full coupled closed-loop poles — the stability
+verdict matches the nonlinear sim's dynamics by construction (verified to 5%
+in growth rate on a dispersed unstable sample). The controller TF includes
+PID + filters + a 2nd-order Padé model of the `T/2 + delay_s` sampling
+delay. All loop algebra stays in state space: polynomial transfer-function
+arithmetic overflows float64 on strongly dispersed flexible plants and
+produces spurious poles.
 
-Simplifications (standard for preliminary design, acceptable for
-near-diagonal inertia): axes are analyzed as decoupled SISO loops;
-orbit-rate gyroscopic coupling (~7e-5 rad/s) and cross-axis flexible coupling
-are neglected in the linear model. The nonlinear simulation retains all of
-these effects — the `slow`-marked test in `tests/test_simulate.py` verifies
-the linear gain margin against nonlinear divergence.
+Remaining simplifications: orbit-rate gyroscopic coupling (~7e-5 rad/s) is
+neglected, and the MEKF estimator dynamics are not in the linear model (its
+attitude corrections are low-rate; the gyro path is direct). The
+`slow`-marked test in `tests/test_simulate.py` verifies the linear gain
+margin against nonlinear divergence.
 
 ## Default configuration
 
@@ -129,10 +157,26 @@ The control design uses **per-axis bandwidths** — each axis runs as fast as
 its own first flexible mode allows: 30 mHz roll (limited by the 0.116 Hz
 coupled bending mode), 55 mHz pitch, 38 mHz yaw. Notches are assigned only to
 the axis whose mode they stabilize, so no axis pays crossover phase lag for
-another axis's filter, and notch widths are sized to hold each resonance
-below about −12 dB across ±15% modal frequency uncertainty. Result: GM
-15–20 dB, PM 35–44°, closed-loop BW 67/153/93 mHz, every flex mode
-gain-stabilized by ≥ 12 dB, and arcsec-level RMS steady-state pointing.
+another axis's filter. **Nominal** result: GM 15–20 dB, PM 35–44°,
+closed-loop BW 67/153/93 mHz, every flex mode gain-stabilized by ≥ 12 dB,
+and arcsec-level RMS steady-state pointing.
+
+**Robustness (read this):** `acs mc` disperses the plant against the fixed
+controller and shows that this nominal performance is *not* robust to the
+default uncertainty set (mode frequency ±15%, damping as low as 0.002,
+participation ±20%, inertia ±10%): dispersed modes escape the fixed notches
+at near-full resonant height, margins collapse, and a fraction of samples
+(≈15%) are genuinely unstable — confirmed in the nonlinear sim, where one
+such case grows with a 940 s doubling time exactly as the coupled linear
+model predicts. Notably the more conservative 20 mHz shared-notch design
+fares better (≈40% pass) but also produces unstable samples: fixed notches
+fundamentally cannot chase modes that move ±15% while damping can be 0.2%.
+The practical resolutions are program-level: tighter modal uncertainty from
+a test-correlated FEM (±5% is customary post-test), damping augmentation on
+the arrays, adaptive/tracking notches, or accepting ~10 mHz-class
+bandwidth. The Monte Carlo exists precisely to expose this trade — rerun it
+with your program's actual uncertainty set before believing any margin
+numbers.
 
 Design note: with these gains the wheels saturate for attitude errors above
 a few hundredths of a degree, so any sizable raw step becomes a

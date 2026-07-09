@@ -224,6 +224,51 @@ def plot_estimator(result, output_dir: Path) -> Path:
     return _save(fig, output_dir, "estimator")
 
 
+def plot_monte_carlo(results, output_dir: Path) -> Path:
+    """Dispersed-sample margins vs requirements."""
+    from .montecarlo import REQ_GM_DB, REQ_MODE_DB, REQ_PM_DEG
+
+    gm = results.field_array("gm_db")
+    pm = results.field_array("pm_deg")
+    mode = results.field_array("mode_peak_db")
+    ok = np.array([s.passes for s in results.samples])
+
+    fig, (ax_sc, ax_hist) = plt.subplots(1, 2, figsize=(13, 6))
+
+    ax = ax_sc
+    ax.scatter(gm[ok], pm[ok], s=18, color="#2980b9", label="pass", alpha=0.75)
+    if np.any(~ok):
+        ax.scatter(gm[~ok], pm[~ok], s=22, color="#c0392b", label="fail", alpha=0.9)
+    ax.scatter(
+        [results.nominal.gm_db], [results.nominal.pm_deg],
+        marker="*", s=180, color="#f39c12", ec="k", lw=0.5, label="nominal", zorder=5,
+    )
+    ax.axvline(REQ_GM_DB, color="0.4", ls="--", lw=0.9)
+    ax.axhline(REQ_PM_DEG, color="0.4", ls="--", lw=0.9)
+    ax.set_xlabel("worst-axis gain margin [dB]")
+    ax.set_ylabel("worst-axis phase margin [deg]")
+    ax.set_title(
+        f"Dispersed stability margins — {len(results.samples)} samples, "
+        f"{100 * results.pass_rate:.0f}% pass"
+    )
+    ax.legend(fontsize=9)
+    ax.grid(alpha=0.3)
+
+    ax = ax_hist
+    ax.hist(mode, bins=30, color="#2980b9", alpha=0.8)
+    ax.axvline(REQ_MODE_DB, color="0.4", ls="--", lw=0.9, label=f"{REQ_MODE_DB:.0f} dB requirement")
+    ax.axvline(
+        results.nominal.mode_peak_db, color="#f39c12", lw=1.5, label="nominal"
+    )
+    ax.set_xlabel("worst flexible-mode peak |L| [dB]")
+    ax.set_ylabel("samples")
+    ax.set_title("Gain stabilization under dispersion")
+    ax.legend(fontsize=9)
+    ax.grid(alpha=0.3)
+
+    return _save(fig, output_dir, "monte_carlo")
+
+
 def plot_bode(freq_data, output_dir: Path) -> list[Path]:
     """Open-loop Bode plots, one figure per axis, margins annotated."""
     paths = []

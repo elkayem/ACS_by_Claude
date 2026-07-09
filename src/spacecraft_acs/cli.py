@@ -153,6 +153,33 @@ def cmd_freq(args) -> int:
     return 0
 
 
+def cmd_mc(args) -> int:
+    from . import montecarlo
+
+    cfg = config_mod.load(args.config)
+    if args.runs is not None:
+        cfg.monte_carlo.n_runs = args.runs
+    if args.time_domain:
+        cfg.monte_carlo.time_domain = True
+    print(
+        f"Monte Carlo: {cfg.monte_carlo.n_runs} dispersed plants, fixed "
+        f"controller (inertia +/-{cfg.monte_carlo.dispersions.inertia_pct:.0f}%, "
+        f"mode freq +/-{cfg.monte_carlo.dispersions.mode_freq_pct:.0f}%, "
+        f"damping {cfg.monte_carlo.dispersions.mode_damping_range}, "
+        f"participation +/-{cfg.monte_carlo.dispersions.participation_pct:.0f}%)"
+        + (", with time-domain runs" if cfg.monte_carlo.time_domain else "")
+    )
+    results = montecarlo.run(cfg, progress=print)
+    print()
+    print(montecarlo.report(results))
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = args.output_dir / "mc_results.csv"
+    montecarlo.to_csv(results, csv_path)
+    plot_path = plotting.plot_monte_carlo(results, args.output_dir)
+    print(f"\nwrote {csv_path}\nwrote {plot_path}")
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="acs",
@@ -182,6 +209,17 @@ def main(argv=None) -> int:
     )
     _add_common(p_unl)
     p_unl.set_defaults(func=cmd_unload)
+
+    p_mc = sub.add_parser(
+        "mc", help="Monte Carlo plant-dispersion robustness analysis"
+    )
+    _add_common(p_mc)
+    p_mc.add_argument("--runs", type=int, default=None, help="override n_runs")
+    p_mc.add_argument(
+        "--time-domain", action="store_true",
+        help="also run the nonlinear sim per sample (slower)",
+    )
+    p_mc.set_defaults(func=cmd_mc)
 
     args = parser.parse_args(argv)
     return args.func(args)
