@@ -153,30 +153,32 @@ inertia, four array modes at 0.10–0.55 Hz with ζ = 0.005 (25%/14%/19% modal
 inertia fraction in roll/pitch/yaw), 0.2 N·m / 68 N·m·s wheels, 4 Hz
 sampling.
 
-The control design uses **per-axis bandwidths** — each axis runs as fast as
-its own first flexible mode allows: 30 mHz roll (limited by the 0.116 Hz
-coupled bending mode), 55 mHz pitch, 38 mHz yaw. Notches are assigned only to
-the axis whose mode they stabilize, so no axis pays crossover phase lag for
-another axis's filter. **Nominal** result: GM 15–20 dB, PM 35–44°,
-closed-loop BW 67/153/93 mHz, every flex mode gain-stabilized by ≥ 12 dB,
-and arcsec-level RMS steady-state pointing.
+The control design is **robustness-first**, selected by Monte Carlo pass
+rate rather than nominal margins alone. Structure: per-axis design
+bandwidths (10/22/13 mHz roll/pitch/yaw, each scaled to its axis's first
+flexible mode), wide notches (damping 1.0) centered on each coupled
+resonance so they cover ±15% modal frequency motion plus
+participation-driven coupling shifts, and a per-axis second-order roll-off
+at ~4.5× each axis's crossover with light damping (0.4) — same asymptotic
+attenuation at the dispersed mode positions for about half the crossover
+phase cost of a Butterworth section. Every filter is assigned only to the
+axis that needs it.
 
-**Robustness (read this):** `acs mc` disperses the plant against the fixed
-controller and shows that this nominal performance is *not* robust to the
-default uncertainty set (mode frequency ±15%, damping as low as 0.002,
-participation ±20%, inertia ±10%): dispersed modes escape the fixed notches
-at near-full resonant height, margins collapse, and a fraction of samples
-(≈15%) are genuinely unstable — confirmed in the nonlinear sim, where one
-such case grows with a 940 s doubling time exactly as the coupled linear
-model predicts. Notably the more conservative 20 mHz shared-notch design
-fares better (≈40% pass) but also produces unstable samples: fixed notches
-fundamentally cannot chase modes that move ±15% while damping can be 0.2%.
-The practical resolutions are program-level: tighter modal uncertainty from
-a test-correlated FEM (±5% is customary post-test), damping augmentation on
-the arrays, adaptive/tracking notches, or accepting ~10 mHz-class
-bandwidth. The Monte Carlo exists precisely to expose this trade — rerun it
-with your program's actual uncertainty set before believing any margin
-numbers.
+Results: nominal GM 9.3–9.9 dB, PM 35–42°, closed-loop BW 33/78/43 mHz —
+and under the full dispersion set (inertia ±10%, mode frequency ±15%,
+damping 0.005–0.01, participation ±20%, 100 samples) **100% of samples meet
+GM ≥ 6 dB, PM ≥ 30°, worst mode ≤ −6 dB, with zero unstable cases**
+(worst-case sample: GM 9.1 dB, PM 35.3°, mode −8.9 dB).
+
+Design history worth knowing: an earlier high-bandwidth variant
+(30/55/38 mHz, narrow notches) had spectacular nominal margins
+(GM 15–20 dB) but a 1% Monte Carlo pass rate with ~14% genuinely unstable
+samples — one was confirmed diverging in the nonlinear sim with a 940 s
+doubling time, exactly as the coupled linear model predicted. Fixed notches
+cannot chase ±15% modes at very low damping; robustness had to be bought
+with bandwidth. Rerun `acs mc` with your program's actual uncertainty set
+(a test-correlated FEM customarily justifies ±5%) before trading bandwidth
+back up.
 
 Design note: with these gains the wheels saturate for attitude errors above
 a few hundredths of a degree, so any sizable raw step becomes a

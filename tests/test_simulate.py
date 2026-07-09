@@ -71,11 +71,11 @@ def _clean_config(gain_scale: float):
 
 @pytest.mark.slow
 def test_gain_margin_consistency_with_time_domain():
-    """The linear analysis predicts ~15 dB worst-axis gain margin (factor
-    ~5.6). The nonlinear sim must be stable well below it and unstable above."""
+    """The linear analysis predicts ~9 dB worst-axis gain margin (factor
+    ~2.9). The nonlinear sim must be stable well below it and unstable above."""
     gm_db = min(d.gm_db for d in linearize.analyze(load_default()))
     gm_factor = 10.0 ** (gm_db / 20.0)
-    assert 4.0 < gm_factor < 7.5  # sanity: default design near 14-16 dB
+    assert 2.3 < gm_factor < 4.0  # sanity: robust default design near 8-11 dB
 
     err_stable = _sim_max_error(_clean_config(0.6 * gm_factor))
     err_unstable = _sim_max_error(_clean_config(1.4 * gm_factor))

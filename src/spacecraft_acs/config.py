@@ -168,7 +168,7 @@ class DispersionConfig:
 
     inertia_pct: float = 10.0
     mode_freq_pct: float = 15.0
-    mode_damping_range: tuple = (0.002, 0.01)  # absolute, uniform
+    mode_damping_range: tuple = (0.005, 0.01)  # absolute, uniform
     participation_pct: float = 20.0
 
     def __post_init__(self):

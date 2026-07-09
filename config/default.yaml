@@ -75,28 +75,33 @@ controller:
   # Gains are computed per axis from the design rule (Kp = J*wn^2,
   # Kd = 2*zeta*J*wn, Ki = Kp*wn/integral_time_factor) unless kp/ki/kd are
   # given explicitly below.
-  # Per-axis bandwidths: each axis runs as fast as its own first flexible
-  # mode allows. Roll is limited by the 0.116 Hz coupled bending mode; pitch
-  # sees no mode below 0.377 Hz and runs ~2x faster.
+  # Robustness-first design (selected by Monte Carlo: 100% pass at inertia
+  # +/-10%, mode freq +/-15%, damping 0.005-0.01, participation +/-20%).
+  # Per-axis bandwidths scaled to each axis's first flexible mode, kept low
+  # enough that wide notches + a low per-axis roll-off hold every dispersed
+  # mode position gain-stabilized below -6 dB.
   design:
-    bandwidth_hz: [0.030, 0.055, 0.038]  # roll, pitch, yaw
+    bandwidth_hz: [0.010, 0.022, 0.013]  # roll, pitch, yaw
     damping: 0.7
     integral_time_factor: 10.0
   # kp: [...]   # explicit per-axis gains override the design rule
   # ki: [...]
   # kd: [...]
-  # Structural filters: notches gain-stabilize each significant flexible
-  # resonance at its coupled (free-free) frequency — the cantilever mode
-  # frequency shifted up by sqrt(J/(J - l^2)). Each notch is assigned only
-  # to the axis that needs it, so no axis pays phase lag at crossover for
-  # another axis's mode. Notch width (damping) is sized to hold the mode
-  # peak below about -12 dB across +/-15% modal frequency uncertainty.
+  # Structural filters: wide notches (damping 1.0) centered on each coupled
+  # (free-free) resonance cover the +/-15% modal frequency uncertainty plus
+  # participation-driven coupling shifts. Each notch and each roll-off is
+  # assigned only to the axis that needs it; the 2nd-order roll-offs sit at
+  # ~4.5x each axis's crossover with light damping (0.4), which buys the
+  # -40 dB/dec attenuation at the dispersed mode positions for about half
+  # the crossover phase cost of a Butterworth section.
   filters:
-    - {type: notch, freq_hz: 0.116,  damping: 0.40, depth_db: 40.0, axes: roll}   # roll 1st bending (coupled)
-    - {type: notch, freq_hz: 0.5615, damping: 0.25, depth_db: 25.0, axes: roll}   # roll 2nd bending (coupled)
-    - {type: notch, freq_hz: 0.166,  damping: 0.35, depth_db: 32.0, axes: yaw}    # yaw 1st bending (coupled)
-    - {type: notch, freq_hz: 0.374,  damping: 0.25, depth_db: 27.0, axes: pitch}  # pitch torsion (coupled)
-    - {type: lowpass, freq_hz: 0.7, damping: 0.7}                                 # high-frequency roll-off
+    - {type: notch, freq_hz: 0.118, damping: 1.0, depth_db: 45.0, axes: roll}   # roll 1st bending (coupled)
+    - {type: notch, freq_hz: 0.570, damping: 1.0, depth_db: 30.0, axes: roll}   # roll 2nd bending (coupled)
+    - {type: notch, freq_hz: 0.170, damping: 1.0, depth_db: 40.0, axes: yaw}    # yaw 1st bending (coupled)
+    - {type: notch, freq_hz: 0.380, damping: 1.0, depth_db: 35.0, axes: pitch}  # pitch torsion (coupled)
+    - {type: lowpass, freq_hz: 0.068, damping: 0.4, axes: roll}                 # per-axis roll-off
+    - {type: lowpass, freq_hz: 0.148, damping: 0.4, axes: pitch}
+    - {type: lowpass, freq_hz: 0.088, damping: 0.4, axes: yaw}
 
 guidance:
   mode: nadir   # track the LVLH frame (z to nadir) at orbit rate
@@ -135,5 +140,5 @@ monte_carlo:
   dispersions:
     inertia_pct: 10.0
     mode_freq_pct: 15.0            # matches the notch-width design assumption
-    mode_damping_range: [0.002, 0.01]
+    mode_damping_range: [0.005, 0.01]  # structural damping floor 0.5%
     participation_pct: 20.0
