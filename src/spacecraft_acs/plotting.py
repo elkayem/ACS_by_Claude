@@ -136,6 +136,54 @@ def plot_slew_comparison(res_prof, res_step, output_dir: Path) -> Path:
     return _save(fig, output_dir, "slew_vs_step")
 
 
+def plot_unload(result, output_dir: Path) -> Path:
+    """Momentum unload: wheel momentum decay, thruster pulses, pointing."""
+    cfg = result.config
+    t = result.t
+    fig, axes = plt.subplots(4, 1, figsize=(10, 12), sharex=True)
+
+    ax = axes[0]
+    for i in range(3):
+        ax.plot(t, result.h_wheel[:, i], color=AXIS_COLORS[i], label=AXIS_LABELS[i])
+    for level, style in [
+        (cfg.thrusters.unload.trigger, "--"),
+        (cfg.thrusters.unload.target, ":"),
+    ]:
+        for s in (1, -1):
+            ax.axhline(s * level, color="0.5", ls=style, lw=0.8)
+    ax.set_ylabel("wheel momentum [N·m·s]")
+    ax.legend(loc="upper right", fontsize=8)
+    ax.set_title(
+        "Momentum unload — trigger "
+        f"{cfg.thrusters.unload.trigger:.0f} N·m·s (dashed), target "
+        f"{cfg.thrusters.unload.target:.0f} N·m·s (dotted), "
+        f"min impulse {cfg.thrusters.torque * cfg.thrusters.min_on_time_s:.2f} N·m·s",
+        fontsize=10,
+    )
+
+    ax = axes[1]
+    for i in range(3):
+        ax.plot(t, result.torque_thruster[:, i], color=AXIS_COLORS[i], lw=0.7)
+    ax.set_ylabel("thruster torque\n(cycle avg) [N·m]")
+
+    ax = axes[2]
+    for i in range(3):
+        ax.plot(t, result.torque_applied[:, i], color=AXIS_COLORS[i], lw=0.7)
+    for s in (1, -1):
+        ax.axhline(s * cfg.wheels.max_torque, color="0.5", ls="--", lw=0.8)
+    ax.set_ylabel("wheel torque [N·m]")
+
+    ax = axes[3]
+    for i in range(3):
+        ax.plot(t, result.att_err_deg[:, i] * 3600.0, color=AXIS_COLORS[i])
+    ax.set_ylabel("attitude error [arcsec]")
+    ax.set_xlabel("time [s]")
+
+    for ax in axes:
+        ax.grid(alpha=0.3)
+    return _save(fig, output_dir, "momentum_unload")
+
+
 def plot_bode(freq_data, output_dir: Path) -> list[Path]:
     """Open-loop Bode plots, one figure per axis, margins annotated."""
     paths = []

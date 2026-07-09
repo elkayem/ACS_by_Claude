@@ -83,6 +83,7 @@ class SensorConfig:
     perfect: bool = False
     gyro_rate_noise: float = 1.0e-6  # rad/s, 1-sigma per axis per sample
     gyro_bias: np.ndarray = field(default_factory=lambda: np.zeros(3))  # rad/s
+    gyro_bias_walk: float = 0.0  # rad/s per sqrt(s): bias random-walk density
     star_tracker_noise_arcsec: float = 10.0  # 1-sigma per axis
     seed: int = 42
 
@@ -90,6 +91,8 @@ class SensorConfig:
         self.gyro_bias = np.asarray(self.gyro_bias, dtype=float)
         if self.gyro_bias.shape != (3,):
             raise ValueError("gyro bias must be a 3-vector")
+        if self.gyro_bias_walk < 0.0:
+            raise ValueError("gyro_bias_walk must be >= 0")
 
 
 @dataclass
@@ -107,6 +110,88 @@ class SrpConfig:
 class EnvironmentConfig:
     gravity_gradient: bool = True
     srp: SrpConfig = field(default_factory=SrpConfig)
+
+
+@dataclass
+class UnloadConfig:
+    """Momentum unload logic thresholds (per body axis, N*m*s)."""
+
+    trigger: float = 40.0  # start unloading when any |h_w| exceeds this
+    target: float = 2.0  # stop when all |h_w| are below this
+    rate_gain: float = 0.02  # 1/s: commanded unload torque = gain * h_w
+    feedforward_compensation: bool = True  # wheels counter thruster torque
+
+    def __post_init__(self):
+        if not 0.0 < self.target < self.trigger:
+            raise ValueError("unload thresholds must satisfy 0 < target < trigger")
+        if self.rate_gain <= 0.0:
+            raise ValueError("unload rate_gain must be positive")
+
+
+@dataclass
+class ThrusterConfig:
+    """On/off attitude thrusters used for momentum unloads. Pulses are
+    width-modulated within each controller cycle with a minimum on-time
+    (minimum impulse bit)."""
+
+    enabled: bool = False
+    torque: float = 1.0  # N*m per axis while firing
+    min_on_time_s: float = 0.02  # minimum pulse width
+    unload: UnloadConfig = field(default_factory=UnloadConfig)
+
+    def __post_init__(self):
+        if self.torque <= 0.0 or self.min_on_time_s <= 0.0:
+            raise ValueError("thruster torque and min on-time must be positive")
+
+
+@dataclass
+class EstimatorConfig:
+    """Multiplicative EKF (attitude error + gyro bias). When disabled the
+    controller consumes raw sensor outputs directly."""
+
+    enabled: bool = False
+    star_tracker_rate_hz: float = 1.0  # ST update rate; gyro runs every cycle
+    p0_att_deg: float = 0.1  # initial attitude 1-sigma
+    p0_bias_dps: float = 1.0e-3  # initial gyro bias 1-sigma
+
+    def __post_init__(self):
+        if self.star_tracker_rate_hz <= 0.0:
+            raise ValueError("star tracker rate must be positive")
+        if self.p0_att_deg <= 0.0 or self.p0_bias_dps <= 0.0:
+            raise ValueError("initial covariance sigmas must be positive")
+
+
+@dataclass
+class DispersionConfig:
+    """Plant parameter dispersions for Monte Carlo analysis (uniform
+    distributions; percentages are half-widths about nominal)."""
+
+    inertia_pct: float = 10.0
+    mode_freq_pct: float = 15.0
+    mode_damping_range: tuple = (0.002, 0.01)  # absolute, uniform
+    participation_pct: float = 20.0
+
+    def __post_init__(self):
+        self.mode_damping_range = tuple(self.mode_damping_range)
+        if len(self.mode_damping_range) != 2 or not (
+            0.0 < self.mode_damping_range[0] <= self.mode_damping_range[1] < 1.0
+        ):
+            raise ValueError("mode_damping_range must be (lo, hi) in (0, 1)")
+        for name in ("inertia_pct", "mode_freq_pct", "participation_pct"):
+            if getattr(self, name) < 0.0:
+                raise ValueError(f"{name} must be >= 0")
+
+
+@dataclass
+class MonteCarloConfig:
+    n_runs: int = 100
+    seed: int = 1
+    time_domain: bool = False  # also run the nonlinear sim per sample
+    dispersions: DispersionConfig = field(default_factory=DispersionConfig)
+
+    def __post_init__(self):
+        if self.n_runs < 1:
+            raise ValueError("n_runs must be >= 1")
 
 
 _AXIS_NAMES = {"roll": 0, "x": 0, "pitch": 1, "y": 1, "yaw": 2, "z": 2}
@@ -241,10 +326,16 @@ class SimulationConfig:
     duration_s: float = 900.0
     substeps: int = 10  # RK4 steps per controller sample
     settling_band: float = 0.02  # fraction of step amplitude
+    initial_wheel_momentum: np.ndarray = field(default_factory=lambda: np.zeros(3))
 
     def __post_init__(self):
         if self.duration_s <= 0.0 or self.substeps < 1:
             raise ValueError("invalid simulation settings")
+        self.initial_wheel_momentum = np.asarray(
+            self.initial_wheel_momentum, dtype=float
+        )
+        if self.initial_wheel_momentum.shape != (3,):
+            raise ValueError("initial_wheel_momentum must be a 3-vector")
 
 
 @dataclass
@@ -253,9 +344,12 @@ class Config:
     wheels: WheelConfig = field(default_factory=WheelConfig)
     sensors: SensorConfig = field(default_factory=SensorConfig)
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
+    thrusters: ThrusterConfig = field(default_factory=ThrusterConfig)
+    estimator: EstimatorConfig = field(default_factory=EstimatorConfig)
     controller: ControllerConfig = field(default_factory=ControllerConfig)
     guidance: GuidanceConfig = field(default_factory=GuidanceConfig)
     simulation: SimulationConfig = field(default_factory=SimulationConfig)
+    monte_carlo: MonteCarloConfig = field(default_factory=MonteCarloConfig)
     orbit_rate: float = GEO_ORBIT_RATE
 
 
@@ -286,13 +380,24 @@ def from_dict(raw: dict) -> Config:
     srp = SrpConfig(**env_raw.pop("srp", {}))
     environment = EnvironmentConfig(srp=srp, **env_raw)
 
+    thr_raw = dict(raw.get("thrusters", {}))
+    unload = UnloadConfig(**thr_raw.pop("unload", {}))
+    thrusters = ThrusterConfig(unload=unload, **thr_raw)
+
+    mc_raw = dict(raw.get("monte_carlo", {}))
+    dispersions = DispersionConfig(**mc_raw.pop("dispersions", {}))
+    monte_carlo = MonteCarloConfig(dispersions=dispersions, **mc_raw)
+
     return Config(
         spacecraft=spacecraft,
         wheels=WheelConfig(**raw.get("wheels", {})),
         sensors=SensorConfig(**raw.get("sensors", {})),
         environment=environment,
+        thrusters=thrusters,
+        estimator=EstimatorConfig(**raw.get("estimator", {})),
         controller=controller,
         guidance=guidance,
         simulation=SimulationConfig(**raw.get("simulation", {})),
+        monte_carlo=monte_carlo,
         orbit_rate=raw.get("orbit_rate", GEO_ORBIT_RATE),
     )

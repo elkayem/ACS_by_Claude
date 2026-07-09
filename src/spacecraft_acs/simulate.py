@@ -13,6 +13,7 @@ from .controller import QuaternionPID
 from .dynamics import FlexibleSpacecraft
 from .environment import Environment
 from .guidance import Guidance
+from .momentum import MomentumManager
 from .sensors import SensorSuite
 
 
@@ -29,6 +30,8 @@ class SimResult:
     torque_applied: np.ndarray  # (K, 3) after wheel limits, N*m
     torque_dist: np.ndarray  # (K, 3) environment torque, N*m
     torque_ff: np.ndarray  # (K, 3) feedforward component of torque_cmd, N*m
+    torque_thruster: np.ndarray  # (K, 3) unload thruster torque, N*m
+    unloading: np.ndarray  # (K,) bool, momentum unload active
     att_err: np.ndarray  # (K, 3) attitude error rotation vector, rad
     config: Config = field(repr=False, default=None)
 
@@ -53,20 +56,25 @@ def run(config: Config) -> SimResult:
     dt_int = dt_ctrl / config.simulation.substeps
     n_samples = int(np.floor(config.simulation.duration_s / dt_ctrl)) + 1
 
+    momentum_mgr = MomentumManager(config.thrusters, dt_ctrl)
+
     # Start on the initial command (nadir attitude) with matching body rate
     q0_cmd, w0_cmd, _ = guidance.command(0.0)
-    x = sc.initial_state(q=q0_cmd, omega=w0_cmd)
+    x = sc.initial_state(
+        q=q0_cmd, omega=w0_cmd, h_wheel=config.simulation.initial_wheel_momentum
+    )
 
     out = {
         name: np.zeros((n_samples, dim))
         for name, dim in [
             ("q", 4), ("omega", 3), ("h_wheel", 3), ("q_cmd", 4),
             ("torque_cmd", 3), ("torque_applied", 3), ("torque_dist", 3),
-            ("torque_ff", 3), ("att_err", 3),
+            ("torque_ff", 3), ("torque_thruster", 3), ("att_err", 3),
         ]
     }
     out["eta"] = np.zeros((n_samples, sc.n_modes))
     out["eta_dot"] = np.zeros((n_samples, sc.n_modes))
+    out["unloading"] = np.zeros(n_samples, dtype=bool)
     t_grid = np.arange(n_samples) * dt_ctrl
 
     saturated = False
@@ -75,20 +83,27 @@ def run(config: Config) -> SimResult:
         q_cmd, omega_cmd, alpha_cmd = guidance.command(t)
         q_meas, omega_meas = sensors.measure(q, omega)
 
+        # Momentum unload: external thruster torque, optionally countered by
+        # a wheel feedforward so pointing only sees the saturation residual
+        t_thr = momentum_mgr.update(h_w)
+
         # Rigid-body acceleration feedforward (command frame ~ body frame at
-        # small tracking error)
-        t_ff = None
+        # small tracking error), plus thruster compensation
+        t_ff = np.zeros(3)
         if config.controller.feedforward and np.any(alpha_cmd):
-            t_ff = config.spacecraft.inertia @ alpha_cmd
+            t_ff = t_ff + config.spacecraft.inertia @ alpha_cmd
+        if config.thrusters.unload.feedforward_compensation:
+            t_ff = t_ff - t_thr
         u_cmd = pid.step(
             q_meas, omega_meas, q_cmd, omega_cmd,
-            freeze_integrator=saturated, torque_ff=t_ff,
+            freeze_integrator=saturated,
+            torque_ff=t_ff if np.any(t_ff) else None,
         )
         u_applied = wheels.apply(u_cmd, h_w)
         saturated = bool(np.any(np.abs(u_applied - u_cmd) > 1e-12))
 
         q_body_from_lvlh = qt.multiply(qt.conjugate(guidance.lvlh_attitude(t)), q)
-        t_dist = env.torque(t, q_body_from_lvlh)
+        t_dist = env.torque(t, q_body_from_lvlh) + t_thr
 
         q_err = qt.error(q_cmd, q)
         out["q"][k] = q
@@ -99,8 +114,10 @@ def run(config: Config) -> SimResult:
         out["q_cmd"][k] = q_cmd
         out["torque_cmd"][k] = u_cmd
         out["torque_applied"][k] = u_applied
-        out["torque_dist"][k] = t_dist
-        out["torque_ff"][k] = 0.0 if t_ff is None else t_ff
+        out["torque_dist"][k] = t_dist - t_thr  # environment component only
+        out["torque_thruster"][k] = t_thr
+        out["unloading"][k] = momentum_mgr.unloading
+        out["torque_ff"][k] = t_ff
         out["att_err"][k] = 2.0 * q_err[1:]
 
         if k == n_samples - 1:
