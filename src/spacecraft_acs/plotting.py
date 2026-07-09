@@ -184,6 +184,46 @@ def plot_unload(result, output_dir: Path) -> Path:
     return _save(fig, output_dir, "momentum_unload")
 
 
+def plot_estimator(result, output_dir: Path) -> Path:
+    """MEKF attitude estimation error with 3-sigma envelope, bias tracking."""
+    t = result.t
+    fig, axes = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+
+    ax = axes[0]
+    for i in range(3):
+        ax.plot(
+            t, np.rad2deg(result.est_att_err[:, i]) * 3600.0,
+            color=AXIS_COLORS[i], lw=0.7, label=AXIS_LABELS[i],
+        )
+    sigma = np.rad2deg(result.est_sigma[:, :3]) * 3600.0
+    env = 3.0 * np.max(sigma, axis=1)
+    ax.plot(t, env, color="0.4", ls="--", lw=1.0, label="±3σ (worst axis)")
+    ax.plot(t, -env, color="0.4", ls="--", lw=1.0)
+    ax.set_ylabel("attitude estimation error [arcsec]")
+    ax.legend(loc="upper right", fontsize=8)
+    rms = np.sqrt(np.mean(np.rad2deg(result.est_att_err) ** 2, axis=0)) * 3600.0
+    ax.set_title(
+        "MEKF — attitude estimation error "
+        f"(RMS {rms[0]:.2f}/{rms[1]:.2f}/{rms[2]:.2f} arcsec vs "
+        f"{result.config.sensors.star_tracker_noise_arcsec:.0f} arcsec raw ST)",
+        fontsize=10,
+    )
+
+    ax = axes[1]
+    deg_hr = np.rad2deg(1.0) * 3600.0
+    for i in range(3):
+        ax.plot(t, result.est_bias_err[:, i] * deg_hr, color=AXIS_COLORS[i], lw=0.8)
+    sigma_b = 3.0 * np.max(result.est_sigma[:, 3:], axis=1) * deg_hr
+    ax.plot(t, sigma_b, color="0.4", ls="--", lw=1.0)
+    ax.plot(t, -sigma_b, color="0.4", ls="--", lw=1.0)
+    ax.set_ylabel("gyro bias estimation error [deg/hr]")
+    ax.set_xlabel("time [s]")
+
+    for ax in axes:
+        ax.grid(alpha=0.3)
+    return _save(fig, output_dir, "estimator")
+
+
 def plot_bode(freq_data, output_dir: Path) -> list[Path]:
     """Open-loop Bode plots, one figure per axis, margins annotated."""
     paths = []

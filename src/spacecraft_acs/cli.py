@@ -43,6 +43,17 @@ def cmd_step(args) -> int:
     )
     path = plotting.plot_step_response(result, metrics, args.output_dir)
     print(f"wrote {path}")
+    if cfg.estimator.enabled:
+        est_rms = (
+            np.sqrt(np.mean(np.rad2deg(result.est_att_err) ** 2, axis=0)) * 3600.0
+        )
+        print(
+            "MEKF attitude estimation error (RMS): "
+            f"roll {est_rms[0]:.2f}, pitch {est_rms[1]:.2f}, "
+            f"yaw {est_rms[2]:.2f} arcsec"
+        )
+        path = plotting.plot_estimator(result, args.output_dir)
+        print(f"wrote {path}")
     return 0
 
 

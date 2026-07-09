@@ -12,6 +12,7 @@ from .config import Config
 from .controller import QuaternionPID
 from .dynamics import FlexibleSpacecraft
 from .environment import Environment
+from .estimator import Mekf
 from .guidance import Guidance
 from .momentum import MomentumManager
 from .sensors import SensorSuite
@@ -32,6 +33,9 @@ class SimResult:
     torque_ff: np.ndarray  # (K, 3) feedforward component of torque_cmd, N*m
     torque_thruster: np.ndarray  # (K, 3) unload thruster torque, N*m
     unloading: np.ndarray  # (K,) bool, momentum unload active
+    est_att_err: np.ndarray  # (K, 3) estimator attitude error, rad (0 if off)
+    est_bias_err: np.ndarray  # (K, 3) bias estimate - true bias, rad/s
+    est_sigma: np.ndarray  # (K, 6) filter 1-sigma [att (rad), bias (rad/s)]
     att_err: np.ndarray  # (K, 3) attitude error rotation vector, rad
     config: Config = field(repr=False, default=None)
 
@@ -45,7 +49,6 @@ def run(config: Config) -> SimResult:
     integration of the nonlinear flexible dynamics between samples."""
     sc = FlexibleSpacecraft(config.spacecraft)
     wheels = ReactionWheelSet(config.wheels)
-    sensors = SensorSuite(config.sensors)
     guidance = Guidance(config.guidance, config.orbit_rate)
     env = Environment(
         config.environment, config.spacecraft.inertia, config.orbit_rate
@@ -56,6 +59,7 @@ def run(config: Config) -> SimResult:
     dt_int = dt_ctrl / config.simulation.substeps
     n_samples = int(np.floor(config.simulation.duration_s / dt_ctrl)) + 1
 
+    sensors = SensorSuite(config.sensors, dt_ctrl)
     momentum_mgr = MomentumManager(config.thrusters, dt_ctrl)
 
     # Start on the initial command (nadir attitude) with matching body rate
@@ -63,6 +67,16 @@ def run(config: Config) -> SimResult:
     x = sc.initial_state(
         q=q0_cmd, omega=w0_cmd, h_wheel=config.simulation.initial_wheel_momentum
     )
+
+    # MEKF: gyro propagation every cycle, star tracker updates decimated to
+    # the configured rate. Initialized on the commanded attitude.
+    mekf = None
+    st_every = 1
+    if config.estimator.enabled:
+        mekf = Mekf(config.estimator, config.sensors, dt_ctrl, q0_cmd)
+        st_every = max(
+            1, round(config.controller.rate_hz / config.estimator.star_tracker_rate_hz)
+        )
 
     out = {
         name: np.zeros((n_samples, dim))
@@ -75,6 +89,9 @@ def run(config: Config) -> SimResult:
     out["eta"] = np.zeros((n_samples, sc.n_modes))
     out["eta_dot"] = np.zeros((n_samples, sc.n_modes))
     out["unloading"] = np.zeros(n_samples, dtype=bool)
+    out["est_att_err"] = np.zeros((n_samples, 3))
+    out["est_bias_err"] = np.zeros((n_samples, 3))
+    out["est_sigma"] = np.zeros((n_samples, 6))
     t_grid = np.arange(n_samples) * dt_ctrl
 
     saturated = False
@@ -82,6 +99,18 @@ def run(config: Config) -> SimResult:
         q, omega, eta, eta_dot, h_w = sc.unpack(x)
         q_cmd, omega_cmd, alpha_cmd = guidance.command(t)
         q_meas, omega_meas = sensors.measure(q, omega)
+
+        if mekf is not None:
+            mekf.propagate(omega_meas)
+            if k % st_every == 0:
+                mekf.update_star_tracker(q_meas)
+            q_used = mekf.q
+            omega_used = mekf.rate_estimate(omega_meas)
+            out["est_att_err"][k] = 2.0 * qt.error(q, mekf.q)[1:]
+            out["est_bias_err"][k] = mekf.bias - sensors.bias
+            out["est_sigma"][k] = mekf.sigma
+        else:
+            q_used, omega_used = q_meas, omega_meas
 
         # Momentum unload: external thruster torque, optionally countered by
         # a wheel feedforward so pointing only sees the saturation residual
@@ -95,7 +124,7 @@ def run(config: Config) -> SimResult:
         if config.thrusters.unload.feedforward_compensation:
             t_ff = t_ff - t_thr
         u_cmd = pid.step(
-            q_meas, omega_meas, q_cmd, omega_cmd,
+            q_used, omega_used, q_cmd, omega_cmd,
             freeze_integrator=saturated,
             torque_ff=t_ff if np.any(t_ff) else None,
         )

@@ -29,9 +29,19 @@ wheels:
 sensors:
   perfect: false
   gyro_rate_noise: 1.0e-6          # rad/s 1-sigma, per axis per sample
-  gyro_bias: [2.0e-7, -1.0e-7, 1.5e-7]  # rad/s
+  gyro_bias: [2.0e-7, -1.0e-7, 1.5e-7]  # rad/s initial bias
+  gyro_bias_walk: 1.0e-8           # rad/s per sqrt(s), bias random walk
   star_tracker_noise_arcsec: 10.0  # 1-sigma per axis
   seed: 42
+
+# Multiplicative EKF (attitude error + gyro bias). Gyro propagation runs at
+# the controller rate; star tracker updates are decimated to their own rate.
+# When disabled the controller consumes raw sensor outputs.
+estimator:
+  enabled: true
+  star_tracker_rate_hz: 1.0
+  p0_att_deg: 0.1      # initial attitude uncertainty, 1-sigma
+  p0_bias_dps: 1.0e-3  # initial gyro bias uncertainty, 1-sigma
 
 environment:
   gravity_gradient: true
