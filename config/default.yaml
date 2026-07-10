@@ -7,10 +7,20 @@
 
 spacecraft:
   mass: 3000.0  # kg total (wet); sets the slosh CM-shift coupling
+  # North-south (pitch-axis) solar array geometry: two ~120 kg wings with
+  # CMs at ~+/-6.5 m load roll (x) and yaw (z) nearly equally through the
+  # parallel-axis term (~12000 kg*m^2 total), while pitch (y) sees only the
+  # hub plus the panel-width term — hence roll/yaw ~5x pitch.
   inertia:
-    - [8000.0,    0.0,    0.0]
-    - [   0.0, 4500.0,    0.0]
-    - [   0.0,    0.0, 6500.0]
+    - [15000.0,    0.0,     0.0]
+    - [    0.0, 3000.0,     0.0]
+    - [    0.0,    0.0, 14500.0]
+  # Solar array drive angle about pitch (deg). The arrays rotate once per
+  # day; modes flagged rotates_with_array have their participation defined
+  # at 0 deg and rotated with the drive, so the out-of-plane bending mode
+  # couples to roll at 0 deg and to yaw at 90 deg. The Monte Carlo samples
+  # this angle uniformly over [0, 360) — fixed gains must hold everywhere.
+  array_angle_deg: 0.0
   # Propellant tanks, each reduced to its first lateral slosh mode (two
   # equivalent rotational modes per tank, see slosh.py). Slosh mass comes
   # from the SP-106 spherical-tank fit at the given fill fraction unless
@@ -31,10 +41,13 @@ spacecraft:
   # coupling into [roll, pitch, yaw] (units sqrt(kg)*m). The squared magnitude
   # is the modal contribution to the effective inertia about that axis.
   modes:
-    - {freq_hz: 0.10, damping: 0.005, participation: [45.0,  0.0,  0.0]}  # 1st out-of-plane array bending
-    - {freq_hz: 0.15, damping: 0.005, participation: [ 0.0,  0.0, 35.0]}  # 1st in-plane array bending
-    - {freq_hz: 0.35, damping: 0.005, participation: [ 0.0, 25.0,  0.0]}  # array torsion
-    - {freq_hz: 0.55, damping: 0.005, participation: [18.0,  0.0,  5.0]}  # 2nd out-of-plane bending
+    - {freq_hz: 0.10, damping: 0.005, participation: [55.0,  0.0,  0.0],
+       rotates_with_array: true}  # 1st out-of-plane array bending
+    - {freq_hz: 0.15, damping: 0.005, participation: [ 0.0,  0.0, 40.0],
+       rotates_with_array: true}  # 1st in-plane array bending
+    - {freq_hz: 0.35, damping: 0.005, participation: [ 0.0, 25.0,  0.0]}  # torsion (pitch, angle-invariant)
+    - {freq_hz: 0.55, damping: 0.005, participation: [20.0,  0.0,  0.0],
+       rotates_with_array: true}  # 2nd out-of-plane bending
 
 orbit_rate: 7.2921159e-5  # GEO sidereal rate, rad/s
 
@@ -92,33 +105,37 @@ controller:
   # Gains are computed per axis from the design rule (Kp = J*wn^2,
   # Kd = 2*zeta*J*wn, Ki = Kp*wn/integral_time_factor) unless kp/ki/kd are
   # given explicitly below.
-  # Robustness-first design (selected by Monte Carlo: 100% pass at inertia
-  # +/-10%, mode freq +/-15%, damping 0.005-0.01, participation +/-20%).
-  # Per-axis bandwidths scaled to each axis's first flexible mode, kept low
-  # enough that wide notches + a low per-axis roll-off hold every dispersed
-  # mode position gain-stabilized below -6 dB.
+  # All-angle robustness-first design (selected by Monte Carlo: 100% pass
+  # at inertia +/-10%, mode freq +/-15%, damping 0.005-0.01, participation
+  # +/-20%, slosh dispersed, and solar array angle uniform over the full
+  # revolution). Because the arrays rotate daily, roll and yaw exchange the
+  # two bending modes and are designed symmetrically: identical bandwidth
+  # and the full notch complement on both axes. Pitch (torsion only,
+  # angle-invariant) runs ~3x faster.
   design:
-    bandwidth_hz: [0.010, 0.022, 0.013]  # roll, pitch, yaw
-    damping: 0.7
-    integral_time_factor: 10.0
+    bandwidth_hz: [0.0075, 0.022, 0.0075]  # roll, pitch, yaw
+    damping: 0.75
+    integral_time_factor: 15.0  # longer Ti trims integrator lag at crossover
   # kp: [...]   # explicit per-axis gains override the design rule
   # ki: [...]
   # kd: [...]
   # Structural filters: wide notches (damping 1.0) centered on each coupled
-  # (free-free) resonance cover the +/-15% modal frequency uncertainty plus
-  # participation-driven coupling shifts. Each notch and each roll-off is
-  # assigned only to the axis that needs it; the 2nd-order roll-offs sit at
-  # ~4.5x each axis's crossover with light damping (0.4), which buys the
-  # -40 dB/dec attenuation at the dispersed mode positions for about half
-  # the crossover phase cost of a Butterworth section.
+  # band cover +/-15% modal frequency uncertainty, participation-driven
+  # coupling shifts, AND the angle-dependent slide of the coupled frequency
+  # as participation sweeps between roll and yaw. Roll-offs are per-axis,
+  # ~5.5x crossover on roll/yaw and 4.5x on pitch, lightly damped (0.4) for
+  # -40 dB/dec at the modes at about half the Butterworth phase cost.
   filters:
-    - {type: notch, freq_hz: 0.118, damping: 1.0, depth_db: 45.0, axes: roll}   # roll 1st bending (coupled)
-    - {type: notch, freq_hz: 0.570, damping: 1.0, depth_db: 30.0, axes: roll}   # roll 2nd bending (coupled)
-    - {type: notch, freq_hz: 0.170, damping: 1.0, depth_db: 40.0, axes: yaw}    # yaw 1st bending (coupled)
-    - {type: notch, freq_hz: 0.380, damping: 1.0, depth_db: 35.0, axes: pitch}  # pitch torsion (coupled)
-    - {type: lowpass, freq_hz: 0.068, damping: 0.4, axes: roll}                 # per-axis roll-off
+    - {type: notch, freq_hz: 0.112, damping: 1.0, depth_db: 45.0, axes: roll}   # 1st out-of-plane bending band
+    - {type: notch, freq_hz: 0.157, damping: 1.0, depth_db: 40.0, axes: roll}   # 1st in-plane bending band
+    - {type: notch, freq_hz: 0.558, damping: 0.6, depth_db: 30.0, axes: roll}   # 2nd bending band
+    - {type: notch, freq_hz: 0.112, damping: 1.0, depth_db: 45.0, axes: yaw}
+    - {type: notch, freq_hz: 0.157, damping: 1.0, depth_db: 40.0, axes: yaw}
+    - {type: notch, freq_hz: 0.558, damping: 0.6, depth_db: 30.0, axes: yaw}
+    - {type: notch, freq_hz: 0.393, damping: 1.0, depth_db: 35.0, axes: pitch}  # torsion (coupled, J_pitch=3000)
+    - {type: lowpass, freq_hz: 0.062, damping: 0.4, axes: roll}
     - {type: lowpass, freq_hz: 0.148, damping: 0.4, axes: pitch}
-    - {type: lowpass, freq_hz: 0.088, damping: 0.4, axes: yaw}
+    - {type: lowpass, freq_hz: 0.062, damping: 0.4, axes: yaw}
 
 guidance:
   mode: nadir   # track the LVLH frame (z to nadir) at orbit rate

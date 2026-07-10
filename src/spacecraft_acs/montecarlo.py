@@ -92,9 +92,11 @@ def disperse(config: Config, disp: DispersionConfig, rng: np.random.Generator) -
             lo, hi = disp.slosh_damping_range
             t.damping = float(np.exp(rng.uniform(np.log(lo), np.log(hi))))
             tanks.append(t)
+        angle = rng.uniform(0.0, 360.0) if disp.array_angle else sc.array_angle_deg
         try:
             cfg.spacecraft = type(sc)(
-                inertia=inertia, modes=modes, mass=sc.mass, tanks=tanks
+                inertia=inertia, modes=modes, mass=sc.mass, tanks=tanks,
+                array_angle_deg=angle,
             )
             return cfg
         except ValueError:

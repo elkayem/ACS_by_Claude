@@ -20,7 +20,9 @@ def load_default():
 
 def test_step_response_end_to_end():
     cfg = load_default()
-    cfg.simulation.duration_s = 400.0
+    # The all-angle robust design runs ~7 mHz roll/yaw bandwidth and a raw
+    # step rings the slosh, so settling takes several hundred seconds
+    cfg.simulation.duration_s = 1500.0
     cfg.guidance.step.time_s = 50.0
     result = simulate.run(cfg)
 
@@ -71,11 +73,11 @@ def _clean_config(gain_scale: float):
 
 @pytest.mark.slow
 def test_gain_margin_consistency_with_time_domain():
-    """The linear analysis predicts ~9 dB worst-axis gain margin (factor
-    ~2.9). The nonlinear sim must be stable well below it and unstable above."""
+    """The linear analysis predicts ~7-8 dB worst-axis gain margin. The
+    nonlinear sim must be stable well below it and unstable above."""
     gm_db = min(d.gm_db for d in linearize.analyze(load_default()))
     gm_factor = 10.0 ** (gm_db / 20.0)
-    assert 2.3 < gm_factor < 4.0  # sanity: robust default design near 8-11 dB
+    assert 1.8 < gm_factor < 3.2  # sanity: all-angle robust design ~6-10 dB
 
     err_stable = _sim_max_error(_clean_config(0.6 * gm_factor))
     err_unstable = _sim_max_error(_clean_config(1.4 * gm_factor))

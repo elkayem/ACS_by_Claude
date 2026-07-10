@@ -13,11 +13,19 @@ GEO_ORBIT_RATE = 7.2921159e-5  # rad/s (sidereal rate)
 
 @dataclass
 class ModeConfig:
-    """One flexible mode: mass-normalized modal coordinate."""
+    """One flexible mode: mass-normalized modal coordinate.
+
+    `rotates_with_array`: the participation vector is defined at array angle
+    zero and rotates with the solar array drive about the pitch (y) axis —
+    true for array bending modes (an out-of-plane mode couples to roll at
+    0 deg and to yaw at 90 deg), false for torsion (always pitch) and for
+    body-fixed modes such as slosh.
+    """
 
     freq_hz: float
     damping: float
     participation: np.ndarray  # (3,) rotational participation, sqrt(kg)*m
+    rotates_with_array: bool = False
 
     def __post_init__(self):
         self.participation = np.asarray(self.participation, dtype=float)
@@ -61,6 +69,7 @@ class SpacecraftConfig:
     modes: list[ModeConfig] = field(default_factory=list)
     mass: float = 3000.0  # kg total; sets the slosh CM-shift coupling
     tanks: list[TankConfig] = field(default_factory=list)
+    array_angle_deg: float = 0.0  # solar array drive angle about pitch (y)
 
     def __post_init__(self):
         self.inertia = np.asarray(self.inertia, dtype=float)
@@ -72,16 +81,17 @@ class SpacecraftConfig:
             raise ValueError("inertia tensor must be positive definite")
         if self.mass <= 0.0:
             raise ValueError("spacecraft mass must be positive")
-        # The hybrid-coordinate mass matrix [[J, L], [L^T, I]] must be positive
-        # definite, which by Schur complement requires J - L L^T > 0. The
-        # participation matrix includes the slosh-equivalent modes.
-        L = self.participation_matrix
-        if self.all_modes and np.any(
-            np.linalg.eigvalsh(self.inertia - L @ L.T) <= 0.0
-        ):
-            raise ValueError(
-                "modal participation too large: J - L L^T is not positive definite"
-            )
+        # The hybrid-coordinate mass matrix [[J, L], [L^T, I]] must be
+        # positive definite (Schur: J - L L^T > 0) at EVERY array angle,
+        # since rotating-mode participation sweeps the roll-yaw plane.
+        if self.all_modes:
+            for angle in np.arange(0.0, 180.0, 15.0):
+                L = self._participation_at(angle)
+                if np.any(np.linalg.eigvalsh(self.inertia - L @ L.T) <= 0.0):
+                    raise ValueError(
+                        "modal participation too large: J - L L^T is not "
+                        f"positive definite at array angle {angle:.0f} deg"
+                    )
 
     @property
     def slosh_modes(self) -> list[ModeConfig]:
@@ -95,9 +105,29 @@ class SpacecraftConfig:
 
     @property
     def all_modes(self) -> list[ModeConfig]:
-        """Structural modes followed by slosh-equivalent modes; this is the
-        mode set the dynamics and linear analysis operate on."""
-        return list(self.modes) + self.slosh_modes
+        """Structural modes (participation rotated to the current array
+        angle) followed by slosh-equivalent modes; this is the mode set the
+        dynamics and linear analysis operate on."""
+        import copy as _copy
+
+        a = np.deg2rad(self.array_angle_deg)
+        c, s = np.cos(a), np.sin(a)
+        r_y = np.array([[c, 0.0, s], [0.0, 1.0, 0.0], [-s, 0.0, c]])
+        out = []
+        for m in self.modes:
+            if m.rotates_with_array and self.array_angle_deg != 0.0:
+                m = _copy.copy(m)
+                m.participation = r_y @ m.participation
+            out.append(m)
+        return out + self.slosh_modes
+
+    def _participation_at(self, angle_deg: float) -> np.ndarray:
+        saved = self.array_angle_deg
+        try:
+            self.array_angle_deg = angle_deg
+            return self.participation_matrix
+        finally:
+            self.array_angle_deg = saved
 
     @property
     def participation_matrix(self) -> np.ndarray:
@@ -224,7 +254,10 @@ class DispersionConfig:
     # they are dispersed much harder
     slosh_freq_pct: float = 50.0
     slosh_mass_pct: float = 30.0
-    slosh_damping_range: tuple = (0.001, 0.01)  # absolute, log-uniform
+    slosh_damping_range: tuple = (0.004, 0.02)  # absolute, log-uniform (PMD)
+    # Solar array drive angle: the arrays rotate once per day, so a fixed-
+    # gain design must hold at every angle. Sampled uniform over [0, 360).
+    array_angle: bool = True
 
     def __post_init__(self):
         self.mode_damping_range = tuple(self.mode_damping_range)
@@ -426,6 +459,7 @@ def from_dict(raw: dict) -> Config:
         modes=[ModeConfig(**m) for m in sc.get("modes", [])],
         mass=sc.get("mass", 3000.0),
         tanks=[TankConfig(**t) for t in sc.get("tanks", [])],
+        array_angle_deg=sc.get("array_angle_deg", 0.0),
     )
     ctrl_raw = dict(raw.get("controller", {}))
     design = GainDesignConfig(**ctrl_raw.pop("design", {}))

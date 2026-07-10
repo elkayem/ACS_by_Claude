@@ -112,6 +112,14 @@ poles at the coupled free-free frequency `ω√(J/(J−l²))` above it.
 - **Guidance** — nadir-pointing LVLH tracking at the GEO orbit rate (default)
   or inertial hold; attitude commands are quaternions and step offsets are
   applied about a configurable axis
+- **Array rotation** — the solar arrays rotate about pitch once per day;
+  modes flagged `rotates_with_array` have their participation defined at
+  drive angle 0 and rotated with `spacecraft.array_angle_deg`, so the
+  out-of-plane bending mode couples to roll at 0° and to yaw at 90° (and
+  the coupled resonance slides with the angle-dependent participation).
+  Torsion and slosh are body-fixed. Physical validity (positive-definite
+  hybrid mass matrix) is enforced at every angle, and the Monte Carlo
+  samples the drive angle uniformly over the revolution
 - **Slew profiler** (`profiler.py`) — smooth eigenaxis reorientation with a
   cycloidal (versine) acceleration S-curve: attitude, rate, and acceleration
   are all continuous, respecting configurable `max_rate_dps` /
@@ -161,25 +169,28 @@ inertia, four array modes at 0.10–0.55 Hz with ζ = 0.005 (25%/14%/19% modal
 inertia fraction in roll/pitch/yaw), 0.2 N·m / 68 N·m·s wheels, 4 Hz
 sampling.
 
-The control design is **robustness-first**, selected by Monte Carlo pass
-rate rather than nominal margins alone. Structure: per-axis design
-bandwidths (10/22/13 mHz roll/pitch/yaw, each scaled to its axis's first
-flexible mode), wide notches (damping 1.0) centered on each coupled
-resonance so they cover ±15% modal frequency motion plus
-participation-driven coupling shifts, and a per-axis second-order roll-off
-at ~4.5× each axis's crossover with light damping (0.4) — same asymptotic
-attenuation at the dispersed mode positions for about half the crossover
-phase cost of a Butterworth section. Every filter is assigned only to the
-axis that needs it.
+The control design is **robustness-first across the full daily array
+revolution**, selected by Monte Carlo pass rate rather than nominal margins
+alone. Because the arrays rotate about pitch once per day, the two bending
+modes exchange between roll and yaw, so those axes are designed
+symmetrically: identical 7.5 mHz bandwidth and the full three-notch
+complement (both bending bands + 2nd bending) on each. Pitch carries only
+the angle-invariant torsion mode and runs 3× faster (22 mHz). Wide notches
+(damping 1.0) cover ±15% modal frequency uncertainty, participation
+dispersion, and the angle-dependent slide of each coupled resonance;
+per-axis lightly damped roll-offs sit at ~5.5× (roll/yaw) and 4.5× (pitch)
+crossover; ζ_cl = 0.75 with a long integral time (Ti factor 15) balances
+the GM/PM budget that the dual notches squeeze.
 
-Results with slosh included: nominal GM 8.3–9.9 dB, PM 35–39°, closed-loop
-BW 35/95/43 mHz — and under the full dispersion set (inertia ±10%, mode
-frequency ±15%, damping 0.005–0.01, participation ±20%, slosh frequency
-±50%, slosh mass ±30%, slosh damping 0.004–0.02, 100 samples) **100% of
-samples meet GM ≥ 6 dB, PM ≥ 30°, and every mode is either gain-stabilized
-(peak ≤ −6 dB) or phase-stabilized (|S| ≤ 6 dB through the mode — the
-disk-margin condition), with zero unstable cases** (worst-case sample:
-GM 7.8 dB, PM 33.5°, mode −8.1 dB).
+Results (slosh and array angle included): nominal GM 7.2–8.7 dB, PM
+34.6–42.3°, closed-loop BW 27/110/26 mHz — and under the full dispersion
+set (inertia ±10%, mode frequency ±15%, damping 0.005–0.01, participation
+±20%, slosh frequency ±50%, mass ±30%, damping 0.004–0.02, array angle
+uniform over [0, 360)°, 100 samples) **100% of samples meet GM ≥ 6 dB,
+PM ≥ 30°, and every mode is either gain-stabilized (peak ≤ −6 dB) or
+phase-stabilized (|S| ≤ 6 dB through the mode — the disk-margin condition),
+with zero unstable cases** (worst-case sample: GM 6.4 dB, PM 33.0°, all
+mode peaks ≤ −21 dB).
 
 **Derived tank requirement — slosh damping ≥ 0.004 (PMD-class).** With
 bare-tank damping (ζ floor 0.001) the pass rate falls to ~65% (min PM 15°):
