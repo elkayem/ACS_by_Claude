@@ -10,12 +10,6 @@
       <stop offset="0.35" stop-color="#ffedb8" stop-opacity="0.06"/>
       <stop offset="1" stop-color="#000000" stop-opacity="0"/>
     </radialGradient>
-    <radialGradient id="earth" cx="0.35" cy="0.30" r="1.0">
-      <stop offset="0" stop-color="#7fb8e6"/>
-      <stop offset="0.45" stop-color="#3b7fc4"/>
-      <stop offset="0.8" stop-color="#1c4e8a"/>
-      <stop offset="1" stop-color="#0d2c55"/>
-    </radialGradient>
     <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#101f4d"/>
       <stop offset="0.25" stop-color="#1b3a86"/>
@@ -72,13 +66,6 @@
     <circle cx="700" cy="180" r="0.6" opacity="0.4"/><circle cx="1080" cy="205" r="0.6" opacity="0.4"/>
     <circle cx="510" cy="160" r="0.7" opacity="0.4"/><circle cx="1440" cy="180" r="0.8" opacity="0.5"/>
   </g>
-
-  <!-- Earth limb, nadir below the spacecraft -->
-  <circle cx="120" cy="760" r="430" fill="url(#earth)"/>
-  <circle cx="120" cy="760" r="430" fill="none" stroke="#9fd4ff" stroke-opacity="0.55" stroke-width="2.5"/>
-  <circle cx="120" cy="760" r="437" fill="none" stroke="#bfe4ff" stroke-opacity="0.18" stroke-width="9"/>
-  <ellipse cx="45" cy="500" rx="150" ry="55" fill="#ffffff" opacity="0.12" transform="rotate(-18 45 500)"/>
-  <ellipse cx="215" cy="440" rx="110" ry="35" fill="#ffffff" opacity="0.09" transform="rotate(-24 215 440)"/>
 
   <!-- ==================== solar arrays (N-S wings, drawn left-right) ==================== -->
   <!-- each wing: yoke + 4 panels, ~9 m of panel from ~2 m to ~11 m off the hub -->
@@ -143,20 +130,8 @@
       <rect x="796" y="156" width="4" height="132" fill="#ffeaa8"/>
       <rect x="820" y="156" width="3" height="132" fill="#8a6a25"/>
     </g>
-    <!-- radiator strip on the face -->
-    <rect x="748" y="160" width="14" height="124" fill="url(#radiator)" rx="2"/>
-    <!-- main comm reflector (west) -->
-    <ellipse cx="726" cy="205" rx="26" ry="44" fill="url(#dish)" stroke="#75818f" stroke-width="1.5"/>
-    <ellipse cx="731" cy="205" rx="17" ry="34" fill="#dee6ee" opacity="0.7"/>
-    <line x1="726" y1="167" x2="748" y2="188" stroke="#9aa3ae" stroke-width="2.5"/>
-    <circle cx="726" cy="166" r="4" fill="#5b6570"/>
-    <!-- second reflector (east, partly behind body) -->
-    <ellipse cx="871" cy="215" rx="20" ry="36" fill="url(#dish)" stroke="#75818f" stroke-width="1.5"/>
-    <ellipse cx="866" cy="215" rx="13" ry="27" fill="#dce4ec" opacity="0.6"/>
-    <!-- earth-deck antennas (nadir, toward Earth at lower left) -->
-    <path d="M765 288 L775 316 L789 316 L799 288 Z" fill="#aab3bd"/>
-    <ellipse cx="782" cy="318" rx="17" ry="7" fill="url(#dish)" stroke="#75818f"/>
-    <path d="M812 288 L818 306 L828 306 L834 288 Z" fill="#8f98a3"/>
+    <!-- radiator strip on the deck edge -->
+    <rect x="748" y="160" width="10" height="124" fill="url(#radiator)" rx="2"/>
     <!-- TT&C horn on top -->
     <line x1="789" y1="138" x2="789" y2="112" stroke="#9aa3ae" stroke-width="3"/>
     <path d="M782 112 L796 112 L792 100 L786 100 Z" fill="#c2ccd8"/>
@@ -168,6 +143,41 @@
       <path d="M740 158 l-8 -8 h8 Z"/><path d="M740 286 l-8 8 h8 Z"/>
       <path d="M838 290 l8 8 h-8 Z"/>
       <circle cx="749" cy="292" r="3.5"/><circle cx="829" cy="292" r="3.5"/>
+    </g>
+    <!-- ===== earth deck: we are at nadir, the antennas point at us ===== -->
+    <!-- west comm reflector, face-on -->
+    <g>
+      <circle cx="737" cy="200" r="36" fill="url(#dish)" stroke="#6b7684" stroke-width="2"/>
+      <circle cx="737" cy="200" r="29" fill="none" stroke="#98a3b1" stroke-width="1" opacity="0.8"/>
+      <circle cx="737" cy="200" r="20" fill="none" stroke="#a8b2bf" stroke-width="0.8" opacity="0.6"/>
+      <circle cx="737" cy="200" r="11" fill="none" stroke="#b6bfca" stroke-width="0.7" opacity="0.5"/>
+      <line x1="712" y1="174" x2="735" y2="198" stroke="#59626d" stroke-width="1.6"/>
+      <line x1="765" y1="177" x2="740" y2="198" stroke="#59626d" stroke-width="1.6"/>
+      <line x1="716" y1="228" x2="736" y2="203" stroke="#59626d" stroke-width="1.6"/>
+      <circle cx="737" cy="200" r="4.5" fill="#39414a"/>
+      <circle cx="735" cy="198" r="1.6" fill="#cdd5de"/>
+    </g>
+    <!-- east comm reflector, face-on -->
+    <g>
+      <circle cx="843" cy="243" r="31" fill="url(#dish)" stroke="#6b7684" stroke-width="2"/>
+      <circle cx="843" cy="243" r="24.5" fill="none" stroke="#98a3b1" stroke-width="1" opacity="0.8"/>
+      <circle cx="843" cy="243" r="17" fill="none" stroke="#a8b2bf" stroke-width="0.8" opacity="0.6"/>
+      <circle cx="843" cy="243" r="9" fill="none" stroke="#b6bfca" stroke-width="0.7" opacity="0.5"/>
+      <line x1="822" y1="221" x2="841" y2="241" stroke="#59626d" stroke-width="1.5"/>
+      <line x1="867" y1="223" x2="846" y2="241" stroke="#59626d" stroke-width="1.5"/>
+      <line x1="825" y1="266" x2="842" y2="246" stroke="#59626d" stroke-width="1.5"/>
+      <circle cx="843" cy="243" r="4" fill="#39414a"/>
+      <circle cx="841" cy="241" r="1.4" fill="#cdd5de"/>
+    </g>
+    <!-- earth-deck horns / spot beams, face-on concentric rings -->
+    <g>
+      <circle cx="800" cy="270" r="10" fill="#3a424c" stroke="#8f99a5" stroke-width="1.4"/>
+      <circle cx="800" cy="270" r="5.5" fill="none" stroke="#aeb8c4" stroke-width="1"/>
+      <circle cx="800" cy="270" r="1.8" fill="#d6dde5"/>
+      <circle cx="774" cy="262" r="7" fill="#434b56" stroke="#8f99a5" stroke-width="1.2"/>
+      <circle cx="774" cy="262" r="2.8" fill="none" stroke="#aeb8c4" stroke-width="0.9"/>
+      <circle cx="816" cy="180" r="6" fill="#434b56" stroke="#8f99a5" stroke-width="1.2"/>
+      <circle cx="816" cy="180" r="2.3" fill="none" stroke="#aeb8c4" stroke-width="0.9"/>
     </g>
   </g>
 
