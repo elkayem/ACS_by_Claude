@@ -199,12 +199,21 @@ propellant CM motion ringing at ~7 mHz, visible as tens of arcsec of
 attitude oscillation; with PMD-class damping the decay constant is ~47 min.
 Quantified mitigations (1° profiled slew, `acs compare`-style metrics):
 
-| tank hardware | post-slew ringing | overshoot | decay |
-|---|---|---|---|
-| PMD vanes both tanks (ζ≈0.008)     | 22 arcsec | 107 arcsec | 47 min |
-| elastomeric diaphragm both (ζ≈0.1, slosh mass ×0.4, freq ×3) | 2 arcsec | 8 arcsec | ~1 min |
-| slow slew instead (accel ÷5, 200 s) | 5.5 arcsec | 18 arcsec | 47 min |
-| slow slew (accel ÷20, 400 s)        | 2.2 arcsec | 6 arcsec | 47 min |
+| mitigation (1° slew) | post-slew ringing | decay |
+|---|---|---|
+| none: fast slew (89 s), PMD ζ≈0.008 | 35 arcsec | 47 min |
+| more vanes (ζ≈0.02), fast slew | 25 arcsec | 19 min |
+| elastomeric diaphragm both tanks (ζ≈0.1, slosh mass ×0.4, freq ×3) | 2 arcsec | ~1 min |
+| **slosh-quiet slew timing, 286 s (default)** | **2.9 arcsec** | 47 min |
+| slosh-quiet timing + more vanes | 2.7 arcsec | 19 min |
+
+The slosh-quiet timing (`max_accel_dps2: 1e-4` → a 1° slew spans ~2 slosh
+periods) places the profile's spectral rolloff and nulls over the slosh
+band; because the mechanism is envelope rolloff rather than a knife-edge
+null, it holds at 2.9–5.5 arcsec across ±30% slosh frequency error — no
+on-orbit slosh ID required. Extra PMD vanes don't reduce the excitation
+(the profile pumps faster than any realistic damping absorbs) but cut the
+residual decay time ~2.5×.
 
 Both the diaphragm and PMD variants pass the Monte Carlo at 100% (the
 diaphragm's higher-frequency, heavily damped slosh mode rides through the
