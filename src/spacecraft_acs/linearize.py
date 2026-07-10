@@ -161,7 +161,7 @@ class AxisFrequencyData:
     cl_peak_db: float
     sens_peak_db: float
     cl_poles: np.ndarray
-    mode_gain_db: list  # (freq_hz, |L| dB at each flex resonance)
+    mode_gain_db: list  # (coupled freq_hz, peak |L| dB, in exclusion box)
 
 
 def analyze_axis(config: Config, axis: int, f_min=1e-4, f_max=None, n_points=4000) -> AxisFrequencyData:
@@ -241,6 +241,16 @@ def analyze_axis(config: Config, axis: int, f_min=1e-4, f_max=None, n_points=400
     # against the LAST downward 0-dB crossing of |L|: low-frequency slosh
     # ripple can create early unity crossings that margin() may report as
     # the crossover, but gain stabilization only applies above the final one.
+    # Each mode must be either gain-stabilized (peak <= -6 dB across the
+    # +/-15% uncertainty window) or phase-stabilized, judged by the
+    # sensitivity peak within the window: |S| <= 6 dB means the loop locus
+    # keeps at least half a unit of distance from the critical point through
+    # the mode — the classical disk-margin condition. Heavily damped modes
+    # sweeping gently through the crossover region (e.g. diaphragm-tank
+    # slosh) pass; a lightly damped mode that drives the locus at the
+    # critical point spikes |S| and fails. Modes at or below the band edge
+    # (the last downward 0-dB crossing) sit inside the loop's own crossover
+    # region, where the GM/PM margins already govern.
     above = np.nonzero(mag_db > 0.0)[0]
     f_band_edge = freq_hz[above[-1]] if above.size else 0.0
     j_axis = config.spacecraft.inertia[axis, axis]
@@ -253,7 +263,9 @@ def analyze_axis(config: Config, axis: int, f_min=1e-4, f_max=None, n_points=400
         if f_coupled <= 1.2 * f_band_edge:
             continue
         window = (freq_hz >= 0.85 * f_coupled) & (freq_hz <= 1.15 * f_coupled)
-        mode_gain_db.append((f_coupled, float(np.max(mag_db[window]))))
+        peak_db = float(np.max(mag_db[window]))
+        violates = peak_db > -6.0 and float(np.max(sens_mag_db[window])) > 6.0
+        mode_gain_db.append((f_coupled, peak_db, violates))
 
     return AxisFrequencyData(
         axis=axis,
@@ -290,8 +302,13 @@ def report(data: list[AxisFrequencyData]) -> str:
         bw = "n/a" if d.cl_bandwidth_hz is None else f"{d.cl_bandwidth_hz * 1e3:.2f} mHz"
         lines.append(f"  closed-loop bandwidth (-3 dB): {bw}")
         lines.append(f"  closed-loop peaks: Mt = {d.cl_peak_db:.1f} dB, Ms = {d.sens_peak_db:.1f} dB")
-        for f_mode, g_mode in d.mode_gain_db:
-            status = "gain-stabilized" if g_mode < -6.0 else "NOT gain-stabilized (check phase)"
+        for f_mode, g_mode, in_box in d.mode_gain_db:
+            if g_mode < -6.0:
+                status = "gain-stabilized"
+            elif not in_box:
+                status = "phase-stabilized (|S| <= 6 dB through the mode)"
+            else:
+                status = "VIOLATES: |S| > 6 dB at the mode"
             lines.append(
                 f"  flex mode at {f_mode:.3f} Hz (coupled, +/-15%): "
                 f"|L| = {g_mode:.1f} dB ({status})"

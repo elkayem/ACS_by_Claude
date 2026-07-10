@@ -37,6 +37,8 @@ class McSample:
     pm_deg: float  # worst axis
     mode_peak_db: float  # worst mode, worst axis
     stable: bool
+    mode_ok: bool = True  # every mode gain-stabilized OR outside the
+    # 6 dB / 30 deg Nichols exclusion zone (phase-stabilized)
     settling_time_s: float | None = None  # time domain only
     overshoot_deg: float | None = None
     peak_torque_nm: float | None = None
@@ -47,7 +49,7 @@ class McSample:
             self.stable
             and self.gm_db >= REQ_GM_DB
             and self.pm_deg >= REQ_PM_DEG
-            and self.mode_peak_db <= REQ_MODE_DB
+            and self.mode_ok
         )
 
 
@@ -104,11 +106,13 @@ def evaluate(cfg: Config, index: int, time_domain: bool, n_points: int = 1500) -
     data = [linearize.analyze_axis(cfg, axis, n_points=n_points) for axis in range(3)]
     gm = min((d.gm_db for d in data if d.gm_db is not None), default=np.inf)
     pm = min((d.pm_deg for d in data if d.pm_deg is not None), default=np.inf)
-    mode_peaks = [g for d in data for _, g in d.mode_gain_db]
+    mode_peaks = [g for d in data for _, g, _ in d.mode_gain_db]
     mode_peak = max(mode_peaks) if mode_peaks else -np.inf
+    mode_ok = not any(in_box for d in data for _, _, in_box in d.mode_gain_db)
     stable = not any(p.real > 1e-9 for d in data for p in d.cl_poles)
     sample = McSample(
-        index=index, gm_db=gm, pm_deg=pm, mode_peak_db=mode_peak, stable=stable
+        index=index, gm_db=gm, pm_deg=pm, mode_peak_db=mode_peak,
+        stable=stable, mode_ok=mode_ok,
     )
 
     if time_domain and stable:
@@ -152,7 +156,10 @@ def report(results: McResults) -> str:
         f"  worst-axis PM  [deg]: min {np.min(pm):6.1f}   "
         f"median {np.median(pm):6.1f}   (requirement >= {REQ_PM_DEG})",
         f"  worst mode |L| [dB]:  max {np.max(mode):6.1f}   "
-        f"median {np.median(mode):6.1f}   (requirement <= {REQ_MODE_DB})",
+        f"median {np.median(mode):6.1f}   (gain-stab. target <= {REQ_MODE_DB}; "
+        f"louder modes must clear the 6 dB/30 deg zone)",
+        f"  mode exclusion-zone violations: "
+        f"{sum(not x.mode_ok for x in s)} of {len(s)} samples",
         f"  pass rate (all requirements): {100.0 * results.pass_rate:.1f} %",
     ]
     if s and s[0].settling_time_s is not None:
@@ -169,7 +176,7 @@ def report(results: McResults) -> str:
 
 def to_csv(results: McResults, path) -> None:
     fields = [
-        "index", "gm_db", "pm_deg", "mode_peak_db", "stable",
+        "index", "gm_db", "pm_deg", "mode_peak_db", "stable", "mode_ok",
         "settling_time_s", "overshoot_deg", "peak_torque_nm",
     ]
     with open(path, "w", encoding="utf-8") as f:

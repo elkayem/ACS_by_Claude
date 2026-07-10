@@ -176,8 +176,10 @@ Results with slosh included: nominal GM 8.3–9.9 dB, PM 35–39°, closed-loop
 BW 35/95/43 mHz — and under the full dispersion set (inertia ±10%, mode
 frequency ±15%, damping 0.005–0.01, participation ±20%, slosh frequency
 ±50%, slosh mass ±30%, slosh damping 0.004–0.02, 100 samples) **100% of
-samples meet GM ≥ 6 dB, PM ≥ 30°, worst mode ≤ −6 dB, with zero unstable
-cases** (worst-case sample: GM 7.8 dB, PM 33.5°, mode −8.1 dB).
+samples meet GM ≥ 6 dB, PM ≥ 30°, and every mode is either gain-stabilized
+(peak ≤ −6 dB) or phase-stabilized (|S| ≤ 6 dB through the mode — the
+disk-margin condition), with zero unstable cases** (worst-case sample:
+GM 7.8 dB, PM 33.5°, mode −8.1 dB).
 
 **Derived tank requirement — slosh damping ≥ 0.004 (PMD-class).** With
 bare-tank damping (ζ floor 0.001) the pass rate falls to ~65% (min PM 15°):
@@ -192,12 +194,26 @@ hardware, not control gains. Higher controller sample rate does not help
 either — the ZOH delay costs only ~0.7° of PM at crossover vs ~33° for the
 robustness filters (4 → 50 Hz buys 0.3°).
 
-Operational note: slosh rings after maneuvers. A 1° maneuver (profiled or
-raw) leaves ~1 cm of propellant CM motion ringing at ~7 mHz with a ~45 min
-decay, visible as ~30–100 arcsec of attitude oscillation; the default slew
-profile (~89 s) is spectrally close to the slosh band. Slosh-gentle slews
-must be several slosh periods long (lower `max_accel_dps2`), a standard
-agility-vs-quiescence trade.
+**Slosh ringing and its mitigation.** A 1° maneuver leaves ~1 cm of
+propellant CM motion ringing at ~7 mHz, visible as tens of arcsec of
+attitude oscillation; with PMD-class damping the decay constant is ~47 min.
+Quantified mitigations (1° profiled slew, `acs compare`-style metrics):
+
+| tank hardware | post-slew ringing | overshoot | decay |
+|---|---|---|---|
+| PMD vanes both tanks (ζ≈0.008)     | 22 arcsec | 107 arcsec | 47 min |
+| elastomeric diaphragm both (ζ≈0.1, slosh mass ×0.4, freq ×3) | 2 arcsec | 8 arcsec | ~1 min |
+| slow slew instead (accel ÷5, 200 s) | 5.5 arcsec | 18 arcsec | 47 min |
+| slow slew (accel ÷20, 400 s)        | 2.2 arcsec | 6 arcsec | 47 min |
+
+Both the diaphragm and PMD variants pass the Monte Carlo at 100% (the
+diaphragm's higher-frequency, heavily damped slosh mode rides through the
+crossover region phase-stabilized — this is what the |S| ≤ 6 dB mode
+criterion exists to judge). Compatibility caveat: elastomeric diaphragms
+are fine with hydrazine/MMH fuel but not with NTO oxidizer, so a realistic
+biprop configuration is fuel-side diaphragm + oxidizer-side PMD; since the
+(heavier) oxidizer tank then still rings, slow slews remain the cheap
+mitigation for quiescence-critical operations.
 
 Design history worth knowing: an earlier high-bandwidth variant
 (30/55/38 mHz, narrow notches) had spectacular nominal margins
