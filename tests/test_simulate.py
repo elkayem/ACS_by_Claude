@@ -46,7 +46,11 @@ def test_step_response_end_to_end():
 def _sim_max_error(cfg) -> float:
     """Max attitude error over the run, with a small initial-condition kick
     delivered through a brief command offset (no step, clean environment)."""
-    result = simulate.run(cfg)
+    try:
+        result = simulate.run(cfg)
+    except ValueError:
+        # state overflowed inside the integrator (zero/NaN quaternion)
+        return float("inf")
     err = result.att_err_deg
     if not np.all(np.isfinite(err)):
         return float("inf")  # diverged past floating-point range

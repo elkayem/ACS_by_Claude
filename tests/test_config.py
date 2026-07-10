@@ -15,7 +15,7 @@ def test_default_config_loads():
     assert len(c.spacecraft.tanks) == 2
     # 4 structural + 2 slosh-equivalent modes per tank
     assert c.spacecraft.participation_matrix.shape == (3, 8)
-    assert c.controller.rate_hz == 4.0
+    assert c.controller.rate_hz == 16.0
     assert c.guidance.mode == "nadir"
     assert np.isclose(c.orbit_rate, 7.2921159e-5)
 

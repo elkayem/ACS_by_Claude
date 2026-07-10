@@ -69,7 +69,10 @@ def _unload_config(compensation=True):
     cfg.thrusters.enabled = True
     cfg.thrusters.unload.trigger = 10.0
     cfg.thrusters.unload.target = 1.0
-    cfg.thrusters.unload.rate_gain = 0.02
+    # Keep the peak unload request (rate_gain * trigger + margin) inside the
+    # wheel torque limit so the feedforward compensation can fully cancel
+    # the pulses - that compensability is what this test verifies
+    cfg.thrusters.unload.rate_gain = 0.015
     cfg.thrusters.unload.feedforward_compensation = compensation
     cfg.simulation.initial_wheel_momentum = np.array([11.0, -11.0, 6.0])
     cfg.simulation.duration_s = 300.0

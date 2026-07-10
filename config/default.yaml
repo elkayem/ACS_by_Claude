@@ -58,10 +58,13 @@ wheels:
 
 sensors:
   perfect: false
-  gyro_rate_noise: 1.0e-6          # rad/s 1-sigma, per axis per sample
+  # Gyro sampled at the 16 Hz controller rate. Per-sample sigma is scaled
+  # for a constant angle-random-walk density (sigma ~ sqrt(rate)): 2e-6 at
+  # 16 Hz carries the same ARW as 1e-6 at 4 Hz.
+  gyro_rate_noise: 2.0e-6          # rad/s 1-sigma, per axis per sample
   gyro_bias: [2.0e-7, -1.0e-7, 1.5e-7]  # rad/s initial bias
   gyro_bias_walk: 1.0e-8           # rad/s per sqrt(s), bias random walk
-  star_tracker_noise_arcsec: 10.0  # 1-sigma per axis
+  star_tracker_noise_arcsec: 10.0  # 1-sigma per axis, per quaternion
   seed: 42
 
 # Multiplicative EKF (attitude error + gyro bias). Gyro propagation runs at
@@ -69,7 +72,7 @@ sensors:
 # When disabled the controller consumes raw sensor outputs.
 estimator:
   enabled: true
-  star_tracker_rate_hz: 1.0
+  star_tracker_rate_hz: 8.0
   p0_att_deg: 0.1      # initial attitude uncertainty, 1-sigma
   p0_bias_dps: 1.0e-3  # initial gyro bias uncertainty, 1-sigma
 
@@ -88,10 +91,11 @@ environment:
 thrusters:
   enabled: false       # `acs unload` enables this for its demo
   # Thruster torque is sized so a minimum pulse's cycle-average (torque *
-  # min_on_time / ctrl period = 0.08 N*m) stays inside the wheel torque
-  # limit, so the feedforward compensation can fully cancel each pulse.
-  torque: 1.0          # N*m per axis while firing
-  min_on_time_s: 0.02  # minimum pulse width -> 0.02 N*m*s impulse bit
+  # min_on_time / ctrl period = 0.6*0.02/0.0625 = 0.19 N*m) stays inside
+  # the wheel torque limit, so the feedforward compensation can fully
+  # cancel each pulse.
+  torque: 0.6          # N*m per axis while firing
+  min_on_time_s: 0.02  # minimum pulse width -> 0.012 N*m*s impulse bit
   unload:
     trigger: 40.0      # N*m*s: start unload when any axis exceeds
     target: 2.0        # N*m*s: stop when all axes below
@@ -99,7 +103,7 @@ thrusters:
     feedforward_compensation: true  # wheels counter the thruster torque
 
 controller:
-  rate_hz: 4.0       # discrete execution rate
+  rate_hz: 16.0      # discrete execution rate = gyro sampling rate
   delay_s: 0.0       # additional computation delay (frequency analysis)
   feedforward: true  # J*alpha_cmd feedforward during profiled slews
   # Gains are computed per axis from the design rule (Kp = J*wn^2,
@@ -164,7 +168,7 @@ guidance:
 
 simulation:
   duration_s: 900.0
-  substeps: 10          # RK4 integration steps per controller sample
+  substeps: 3           # RK4 steps per 16 Hz controller sample (~21 ms)
   settling_band: 0.02   # settling criterion, fraction of step amplitude
   initial_wheel_momentum: [0.0, 0.0, 0.0]  # N*m*s
 

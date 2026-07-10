@@ -166,11 +166,15 @@ class AxisFrequencyData:
 
 def analyze_axis(config: Config, axis: int, f_min=1e-4, f_max=None, n_points=4000) -> AxisFrequencyData:
     if f_max is None:
-        # Cover the flex modes and the Nyquist neighborhood
-        f_max = max(
-            [2.0 * config.controller.rate_hz]
-            + [5.0 * m.freq_hz for m in config.spacecraft.all_modes]
+        # Cover the flex modes, but never plot past Nyquist: this is a
+        # continuous-equivalent model of a discrete controller (Pade delay,
+        # bilinear-designed filters) and has no physical meaning above
+        # rate/2 — and degrades approaching it.
+        nyquist = 0.5 * config.controller.rate_hz
+        f_cover = max(
+            [5.0 * m.freq_hz for m in config.spacecraft.all_modes] or [nyquist]
         )
+        f_max = min(nyquist, f_cover)
     f_grid = np.logspace(np.log10(f_min), np.log10(f_max), n_points)
     # A lightly damped mode (zeta ~ 1e-3) has a fractional width far below
     # the base log-grid spacing, so margins computed from the frequency

@@ -102,7 +102,7 @@ poles at the coupled free-free frequency `ω√(J/(J−l²))` above it.
   (`perfect: true` bypasses)
 - **MEKF estimator** (`estimator.py`) — 6-state multiplicative EKF (attitude
   error + gyro bias): gyro propagation every controller cycle, star tracker
-  updates decimated to their own rate (default 1 Hz), Joseph-form update.
+  updates decimated to their own rate (default 8 Hz), Joseph-form update.
   Default-on; delivers 1.4–3.8 arcsec attitude knowledge vs 10 arcsec raw ST
   and a quieter torque command
 - **Momentum management** (`momentum.py`) — threshold-triggered thruster
@@ -140,7 +140,7 @@ poles at the coupled free-free frequency `ω√(J/(J−l²))` above it.
 ### Controller (`controller.py`)
 
 Quaternion-error feedback PID executed at a configurable discrete rate
-(default 4 Hz) with zero-order hold:
+(default 16 Hz, equal to the gyro sampling rate) with zero-order hold:
 
 - error rotation vector `θ = 2·vec(q_cmd⁻¹ ⊗ q_meas)` (shortest path)
 - per-axis `u = −(Kp θ + Ki ∫θ dt + Kd ω_err)` with integrator anti-windup
@@ -174,8 +174,10 @@ margin against nonlinear divergence.
 
 `config/default.yaml` models a large GEO comsat: 8000/4500/6500 kg·m²
 inertia, four array modes at 0.10–0.55 Hz with ζ = 0.005 (25%/14%/19% modal
-inertia fraction in roll/pitch/yaw), 0.2 N·m / 68 N·m·s wheels, 4 Hz
-sampling.
+inertia fraction in roll/pitch/yaw), 0.2 N·m / 68 N·m·s wheels, 16 Hz
+gyro/controller sampling with 8 Hz star tracker updates. The frequency
+analysis is a continuous-equivalent model of the discrete loop and is
+plotted only up to the 5×-highest-mode coverage, never past Nyquist.
 
 The control design is **robustness-first across the full daily array
 revolution**, selected by Monte Carlo pass rate rather than nominal margins
@@ -211,7 +213,7 @@ Any PMD-class floor closes the design (ζ 0.004–0.02 → 100%, 0.01–0.05 →
 100%, diaphragm 0.03–0.10 → 100%): slosh compliance is bought with tank
 hardware, not control gains. Higher controller sample rate does not help
 either — the ZOH delay costs only ~0.7° of PM at crossover vs ~33° for the
-robustness filters (4 → 50 Hz buys 0.3°).
+robustness filters (a rate study from 4 to 50 Hz moved PM by only 0.3°).
 
 **Slosh ringing and its mitigation.** A 1° maneuver leaves ~1 cm of
 propellant CM motion ringing at ~7 mHz, visible as tens of arcsec of
