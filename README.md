@@ -1,5 +1,13 @@
 # spacecraft-acs
 
+![Large GEO communications satellite with north-south solar array wings](docs/spacecraft.svg)
+
+*The modeled spacecraft: 3000 kg wet mass with two ~120 kg solar array wings
+spanning ~22 m tip-to-tip along the pitch (north-south) axis — the geometry
+behind J = diag(15000, 3000, 14500) kg·m², the 0.10–0.55 Hz array modes that
+rotate between roll and yaw as the wings track the sun, and the two
+propellant tanks whose slosh modes sit below the control bandwidth.*
+
 Attitude control system design and analysis for a large GEO satellite with
 large flexible solar arrays. Supports the classical GNC workflow:
 

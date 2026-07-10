@@ -1,0 +1,177 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 440" font-family="sans-serif">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#04060e"/>
+      <stop offset="0.6" stop-color="#070b18"/>
+      <stop offset="1" stop-color="#0a1124"/>
+    </linearGradient>
+    <radialGradient id="sunglow" cx="0.88" cy="0.10" r="0.55">
+      <stop offset="0" stop-color="#fff7dc" stop-opacity="0.20"/>
+      <stop offset="0.35" stop-color="#ffedb8" stop-opacity="0.06"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="earth" cx="0.35" cy="0.30" r="1.0">
+      <stop offset="0" stop-color="#7fb8e6"/>
+      <stop offset="0.45" stop-color="#3b7fc4"/>
+      <stop offset="0.8" stop-color="#1c4e8a"/>
+      <stop offset="1" stop-color="#0d2c55"/>
+    </radialGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#101f4d"/>
+      <stop offset="0.25" stop-color="#1b3a86"/>
+      <stop offset="0.55" stop-color="#2450b3"/>
+      <stop offset="0.8" stop-color="#1b3a86"/>
+      <stop offset="1" stop-color="#0e1c45"/>
+    </linearGradient>
+    <linearGradient id="panelSheen" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#bcd4ff" stop-opacity="0.13"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="mli" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f2d581"/>
+      <stop offset="0.35" stop-color="#c99f3a"/>
+      <stop offset="0.7" stop-color="#9a742a"/>
+      <stop offset="1" stop-color="#6e5220"/>
+    </linearGradient>
+    <linearGradient id="mliTop" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fbeaae"/>
+      <stop offset="1" stop-color="#d4ad4a"/>
+    </linearGradient>
+    <linearGradient id="radiator" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f4f7fb"/>
+      <stop offset="1" stop-color="#b9c4d4"/>
+    </linearGradient>
+    <radialGradient id="dish" cx="0.4" cy="0.35" r="0.9">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="0.7" stop-color="#c2ccd8"/>
+      <stop offset="1" stop-color="#8b98a8"/>
+    </radialGradient>
+    <linearGradient id="boom" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d8dde4"/>
+      <stop offset="1" stop-color="#7d8590"/>
+    </linearGradient>
+  </defs>
+
+  <!-- deep space -->
+  <rect width="1600" height="440" fill="url(#sky)"/>
+  <rect width="1600" height="440" fill="url(#sunglow)"/>
+  <g fill="#ffffff">
+    <circle cx="63" cy="52" r="1.1" opacity="0.8"/><circle cx="142" cy="188" r="0.8" opacity="0.5"/>
+    <circle cx="221" cy="75" r="1.3" opacity="0.9"/><circle cx="305" cy="341" r="0.7" opacity="0.5"/>
+    <circle cx="388" cy="132" r="0.9" opacity="0.6"/><circle cx="451" cy="47" r="1.2" opacity="0.7"/>
+    <circle cx="533" cy="392" r="0.8" opacity="0.5"/><circle cx="597" cy="86" r="0.7" opacity="0.6"/>
+    <circle cx="668" cy="30" r="1.0" opacity="0.8"/><circle cx="742" cy="404" r="0.9" opacity="0.5"/>
+    <circle cx="815" cy="55" r="0.8" opacity="0.6"/><circle cx="880" cy="371" r="1.1" opacity="0.6"/>
+    <circle cx="957" cy="99" r="0.7" opacity="0.6"/><circle cx="1026" cy="26" r="1.2" opacity="0.8"/>
+    <circle cx="1105" cy="335" r="0.8" opacity="0.5"/><circle cx="1170" cy="151" r="1.0" opacity="0.7"/>
+    <circle cx="1246" cy="63" r="0.8" opacity="0.6"/><circle cx="1318" cy="392" r="1.0" opacity="0.5"/>
+    <circle cx="1387" cy="115" r="1.2" opacity="0.8"/><circle cx="1462" cy="243" r="0.7" opacity="0.5"/>
+    <circle cx="1529" cy="58" r="1.0" opacity="0.7"/><circle cx="1575" cy="316" r="0.8" opacity="0.5"/>
+    <circle cx="97" cy="286" r="0.7" opacity="0.5"/><circle cx="356" cy="223" r="0.7" opacity="0.4"/>
+    <circle cx="700" cy="180" r="0.6" opacity="0.4"/><circle cx="1080" cy="205" r="0.6" opacity="0.4"/>
+    <circle cx="510" cy="160" r="0.7" opacity="0.4"/><circle cx="1440" cy="180" r="0.8" opacity="0.5"/>
+  </g>
+
+  <!-- Earth limb, nadir below the spacecraft -->
+  <circle cx="120" cy="760" r="430" fill="url(#earth)"/>
+  <circle cx="120" cy="760" r="430" fill="none" stroke="#9fd4ff" stroke-opacity="0.55" stroke-width="2.5"/>
+  <circle cx="120" cy="760" r="437" fill="none" stroke="#bfe4ff" stroke-opacity="0.18" stroke-width="9"/>
+  <ellipse cx="45" cy="500" rx="150" ry="55" fill="#ffffff" opacity="0.12" transform="rotate(-18 45 500)"/>
+  <ellipse cx="215" cy="440" rx="110" ry="35" fill="#ffffff" opacity="0.09" transform="rotate(-24 215 440)"/>
+
+  <!-- ==================== solar arrays (N-S wings, drawn left-right) ==================== -->
+  <!-- each wing: yoke + 4 panels, ~9 m of panel from ~2 m to ~11 m off the hub -->
+  <g id="wings">
+    <!-- booms -->
+    <rect x="120" y="216" width="590" height="7" fill="url(#boom)"/>
+    <rect x="890" y="216" width="590" height="7" fill="url(#boom)"/>
+    <!-- yokes -->
+    <path d="M712 219 L748 200 L748 238 Z" fill="#9aa3ae"/>
+    <path d="M888 219 L852 200 L852 238 Z" fill="#9aa3ae"/>
+    <!-- panels: left wing -->
+    <g>
+      <g id="panelL1"><rect x="118" y="164" width="140" height="110" rx="3" fill="url(#panel)" stroke="#5f7ec4" stroke-width="1.4"/></g>
+      <g id="panelL2"><rect x="264" y="164" width="140" height="110" rx="3" fill="url(#panel)" stroke="#5f7ec4" stroke-width="1.4"/></g>
+      <g id="panelL3"><rect x="410" y="164" width="140" height="110" rx="3" fill="url(#panel)" stroke="#5f7ec4" stroke-width="1.4"/></g>
+      <g id="panelL4"><rect x="556" y="164" width="140" height="110" rx="3" fill="url(#panel)" stroke="#5f7ec4" stroke-width="1.4"/></g>
+      <!-- right wing -->
+      <g id="panelR1"><rect x="904" y="164" width="140" height="110" rx="3" fill="url(#panel)" stroke="#5f7ec4" stroke-width="1.4"/></g>
+      <g id="panelR2"><rect x="1050" y="164" width="140" height="110" rx="3" fill="url(#panel)" stroke="#5f7ec4" stroke-width="1.4"/></g>
+      <g id="panelR3"><rect x="1196" y="164" width="140" height="110" rx="3" fill="url(#panel)" stroke="#5f7ec4" stroke-width="1.4"/></g>
+      <g id="panelR4"><rect x="1342" y="164" width="140" height="110" rx="3" fill="url(#panel)" stroke="#5f7ec4" stroke-width="1.4"/></g>
+    </g>
+    <!-- cell grid on every panel -->
+    <g stroke="#0a1738" stroke-width="1" opacity="0.85">
+      <path d="M118 191 h578 M118 219 h578 M118 247 h578 M904 191 h578 M904 219 h578 M904 247 h578"/>
+      <path d="M146 164 v110 M175 164 v110 M204 164 v110 M233 164 v110
+               M292 164 v110 M321 164 v110 M350 164 v110 M379 164 v110
+               M438 164 v110 M467 164 v110 M496 164 v110 M525 164 v110
+               M584 164 v110 M613 164 v110 M642 164 v110 M671 164 v110
+               M932 164 v110 M961 164 v110 M990 164 v110 M1019 164 v110
+               M1078 164 v110 M1107 164 v110 M1136 164 v110 M1165 164 v110
+               M1224 164 v110 M1253 164 v110 M1282 164 v110 M1311 164 v110
+               M1370 164 v110 M1399 164 v110 M1428 164 v110 M1457 164 v110"/>
+    </g>
+    <!-- sun sheen sweeping the wings -->
+    <rect x="118" y="164" width="578" height="110" fill="url(#panelSheen)"/>
+    <rect x="904" y="164" width="578" height="110" fill="url(#panelSheen)"/>
+    <!-- hinge lines -->
+    <g fill="#c8cfd8">
+      <rect x="256" y="176" width="10" height="86" rx="2"/><rect x="402" y="176" width="10" height="86" rx="2"/>
+      <rect x="548" y="176" width="10" height="86" rx="2"/><rect x="1042" y="176" width="10" height="86" rx="2"/>
+      <rect x="1188" y="176" width="10" height="86" rx="2"/><rect x="1334" y="176" width="10" height="86" rx="2"/>
+    </g>
+  </g>
+
+  <!-- ==================== hub ==================== -->
+  <g id="hub">
+    <!-- top face (perspective) -->
+    <path d="M742 156 L768 138 L862 138 L836 156 Z" fill="url(#mliTop)"/>
+    <!-- east face -->
+    <path d="M836 156 L862 138 L862 268 L836 288 Z" fill="#7d5f22"/>
+    <!-- main body, gold MLI -->
+    <rect x="742" y="156" width="94" height="132" fill="url(#mli)"/>
+    <!-- MLI crinkle -->
+    <g opacity="0.35">
+      <rect x="742" y="171" width="94" height="4" fill="#fff2c0"/>
+      <rect x="742" y="196" width="94" height="3" fill="#7a5c20"/>
+      <rect x="742" y="224" width="94" height="4" fill="#ffe9a5"/>
+      <rect x="742" y="251" width="94" height="3" fill="#7a5c20"/>
+      <rect x="742" y="270" width="94" height="3" fill="#fff2c0"/>
+      <rect x="758" y="156" width="3" height="132" fill="#8a6a25"/>
+      <rect x="796" y="156" width="4" height="132" fill="#ffeaa8"/>
+      <rect x="820" y="156" width="3" height="132" fill="#8a6a25"/>
+    </g>
+    <!-- radiator strip on the face -->
+    <rect x="748" y="160" width="14" height="124" fill="url(#radiator)" rx="2"/>
+    <!-- main comm reflector (west) -->
+    <ellipse cx="726" cy="205" rx="26" ry="44" fill="url(#dish)" stroke="#75818f" stroke-width="1.5"/>
+    <ellipse cx="731" cy="205" rx="17" ry="34" fill="#dee6ee" opacity="0.7"/>
+    <line x1="726" y1="167" x2="748" y2="188" stroke="#9aa3ae" stroke-width="2.5"/>
+    <circle cx="726" cy="166" r="4" fill="#5b6570"/>
+    <!-- second reflector (east, partly behind body) -->
+    <ellipse cx="871" cy="215" rx="20" ry="36" fill="url(#dish)" stroke="#75818f" stroke-width="1.5"/>
+    <ellipse cx="866" cy="215" rx="13" ry="27" fill="#dce4ec" opacity="0.6"/>
+    <!-- earth-deck antennas (nadir, toward Earth at lower left) -->
+    <path d="M765 288 L775 316 L789 316 L799 288 Z" fill="#aab3bd"/>
+    <ellipse cx="782" cy="318" rx="17" ry="7" fill="url(#dish)" stroke="#75818f"/>
+    <path d="M812 288 L818 306 L828 306 L834 288 Z" fill="#8f98a3"/>
+    <!-- TT&C horn on top -->
+    <line x1="789" y1="138" x2="789" y2="112" stroke="#9aa3ae" stroke-width="3"/>
+    <path d="M782 112 L796 112 L792 100 L786 100 Z" fill="#c2ccd8"/>
+    <!-- star trackers -->
+    <rect x="838" y="160" width="16" height="10" rx="2" fill="#2b3138" transform="rotate(-24 846 165)"/>
+    <rect x="838" y="176" width="16" height="10" rx="2" fill="#2b3138" transform="rotate(-40 846 181)"/>
+    <!-- thruster pods -->
+    <g fill="#5b6570">
+      <path d="M740 158 l-8 -8 h8 Z"/><path d="M740 286 l-8 8 h8 Z"/>
+      <path d="M838 290 l8 8 h-8 Z"/>
+      <circle cx="749" cy="292" r="3.5"/><circle cx="829" cy="292" r="3.5"/>
+    </g>
+  </g>
+
+  <!-- soft ground shadow of hub on the boom for depth -->
+  <rect x="700" y="216" width="12" height="7" fill="#000000" opacity="0.25"/>
+  <rect x="890" y="216" width="12" height="7" fill="#000000" opacity="0.25"/>
+</svg>
