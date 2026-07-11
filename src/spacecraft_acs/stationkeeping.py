@@ -28,17 +28,29 @@ from .config import PhasePlaneConfig, RcsConfig, StationkeepingConfig
 
 
 class PhasePlane:
-    """Per-axis bang-bang with deadband, rate lead, hysteresis, rate limit."""
+    """Per-axis bang-bang with deadband, rate lead, hysteresis, rate limit.
 
-    def __init__(self, cfg: PhasePlaneConfig):
+    Equivalent to the classic PD-relay form: sigma = kP*theta + kD*omega
+    with kP = 1, kD = rate_lead_s, fed through a relay with deadband and
+    hysteresis. Optional structural filters (the "Filter" block of the
+    PD-equivalent diagram) run on sigma so flexible-mode content in the
+    rate estimate cannot chatter the relay.
+    """
+
+    def __init__(self, cfg: PhasePlaneConfig, dt: float = 0.0625):
         self.cfg = cfg
         self.db = np.deg2rad(cfg.deadband_deg)
         self.rate_lim = np.deg2rad(cfg.rate_limit_dps)
         self._firing = np.zeros(3, dtype=int)  # current command per axis
+        from .controller import _Biquad
+
+        self._filters = [_Biquad(fc, dt) for fc in cfg.filters]
 
     def step(self, theta_err: np.ndarray, omega_err: np.ndarray) -> np.ndarray:
         """Return the commanded torque sign per axis in {-1, 0, +1}."""
         s = theta_err + self.cfg.rate_lead_s * omega_err
+        for f in self._filters:
+            s = f.step(s)
         u = self._firing.copy()
         for i in range(3):
             if abs(omega_err[i]) > self.rate_lim:
@@ -101,6 +113,55 @@ class BurnController:
         # full-on passes through
         min_duty = self.rcs.min_on_time_s / self.dt
         duty[(duty > 0.0) & (duty < min_duty)] = 0.0
+        force = duty @ self.forces
+        torque = duty @ self.torques
+        return duty, force, torque
+
+
+class HoldController:
+    """Zero-delta-V attitude hold: the phase plane fires pure-torque couples
+    (opposite-face thruster sets whose net force is nominally zero) with
+    minimum-impulse pulses."""
+
+    AXES = ("roll", "pitch", "yaw")
+
+    def __init__(self, rcs: RcsConfig, sk: StationkeepingConfig, dt: float):
+        self.rcs = rcs
+        self.sk = sk
+        self.dt = dt
+        if not rcs.couples:
+            raise ValueError("attitude hold requires rcs.couples")
+        units = {t.name: t for t in rcs.thrusters}
+        self.units = list(rcs.thrusters)
+        index = {t.name: i for i, t in enumerate(self.units)}
+        self.forces = np.array([t.force * t.direction for t in self.units])
+        self.torques = np.array(
+            [
+                np.cross(t.position - rcs.cm_offset, t.force * t.direction)
+                for t in self.units
+            ]
+        )
+        # couple membership masks per (axis, sign)
+        self._masks = {}
+        for axis_i, axis in enumerate(self.AXES):
+            for sign, tag in ((+1, "+"), (-1, "-")):
+                key = f"{axis}{tag}"
+                if key not in rcs.couples:
+                    raise ValueError(f"rcs.couples missing {key!r}")
+                mask = np.zeros(len(self.units), dtype=bool)
+                for name in rcs.couples[key]:
+                    mask[index[name]] = True
+                self._masks[(axis_i, sign)] = mask
+        # minimum-impulse pulse duty per commanded cycle
+        self.pulse_duty = min(1.0, rcs.min_on_time_s / dt)
+
+    def step(self, u: np.ndarray):
+        """Duty per thruster given the phase-plane command: each commanded
+        axis fires its couple for one minimum-impulse pulse this cycle."""
+        duty = np.zeros(len(self.units))
+        for axis in range(3):
+            if u[axis] != 0:
+                duty[self._masks[(axis, int(u[axis]))]] = self.pulse_duty
         force = duty @ self.forces
         torque = duty @ self.torques
         return duty, force, torque

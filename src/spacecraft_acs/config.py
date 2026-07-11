@@ -251,6 +251,10 @@ class RcsConfig:
 
     thrusters: list[ThrusterUnit] = field(default_factory=list)
     groups: dict = field(default_factory=dict)  # burn group -> thruster names
+    # Pure-torque couples for attitude hold: "roll+", "roll-", "pitch+", ...
+    # -> thruster names whose combined firing gives torque about that axis
+    # with (nominally) zero net force
+    couples: dict = field(default_factory=dict)
     cm_offset: np.ndarray = field(default_factory=lambda: np.zeros(3))  # m, actual-nominal
     isp_s: float = 290.0
     min_on_time_s: float = 0.02  # PWM quantization floor per cycle
@@ -262,10 +266,13 @@ class RcsConfig:
         names = [t.name for t in self.thrusters]
         if len(set(names)) != len(names):
             raise ValueError("thruster names must be unique")
-        for group, members in self.groups.items():
-            for m in members:
-                if m not in names:
-                    raise ValueError(f"group {group!r} references unknown thruster {m!r}")
+        for label, mapping in (("group", self.groups), ("couple", self.couples)):
+            for key, members in mapping.items():
+                for m in members:
+                    if m not in names:
+                        raise ValueError(
+                            f"{label} {key!r} references unknown thruster {m!r}"
+                        )
 
 
 @dataclass
@@ -277,6 +284,11 @@ class PhasePlaneConfig:
     hysteresis: float = 0.3  # stop firing once |s| < hysteresis * deadband
     rate_limit_dps: float = 0.05  # fire against rate regardless of attitude
     mod_depth: float = 0.5  # off-pulse duty reduction on the opposing subset
+    # Optional structural filtering of the switching function (the "Filter"
+    # block of the classic PD-equivalent phase-plane diagram): notches/
+    # low-passes applied to sigma per axis so flexible-mode content in the
+    # rate estimate cannot chatter the relay
+    filters: list = field(default_factory=list)
 
     def __post_init__(self):
         if self.deadband_deg <= 0.0 or self.rate_lead_s < 0.0:
@@ -285,6 +297,10 @@ class PhasePlaneConfig:
             raise ValueError("hysteresis must be in (0, 1)")
         if not 0.0 < self.mod_depth <= 1.0:
             raise ValueError("mod_depth must be in (0, 1]")
+        self.filters = [
+            f if isinstance(f, FilterConfig) else FilterConfig(**f)
+            for f in self.filters
+        ]
 
 
 @dataclass
@@ -302,6 +318,9 @@ class BurnConfig:
 class StationkeepingConfig:
     burn: BurnConfig = field(default_factory=BurnConfig)
     phase_plane: PhasePlaneConfig = field(default_factory=PhasePlaneConfig)
+    # Thruster attitude hold (zero delta-V): the phase plane fires
+    # pure-torque couples for the whole run; wheels are held
+    hold: bool = False
 
 
 @dataclass
@@ -338,6 +357,11 @@ class DispersionConfig:
     # Solar array drive angle: the arrays rotate once per day, so a fixed-
     # gain design must hold at every angle. Sampled uniform over [0, 360).
     array_angle: bool = True
+    # Thruster-mode dispersions: CM offset uniform +/- per axis (m) about
+    # the configured value, and initial attitude error magnitude (deg) with
+    # random direction, for the attitude-hold campaign
+    cm_offset_m: float = 0.05
+    initial_err_deg: float = 1.0
 
     def __post_init__(self):
         self.mode_damping_range = tuple(self.mode_damping_range)
@@ -499,6 +523,9 @@ class SimulationConfig:
     substeps: int = 10  # RK4 steps per controller sample
     settling_band: float = 0.02  # fraction of step amplitude
     initial_wheel_momentum: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    # Initial attitude error as a rotation vector (deg): the sim starts
+    # offset from the commanded attitude by this rotation
+    initial_att_err_deg: np.ndarray = field(default_factory=lambda: np.zeros(3))
 
     def __post_init__(self):
         if self.duration_s <= 0.0 or self.substeps < 1:
@@ -508,6 +535,9 @@ class SimulationConfig:
         )
         if self.initial_wheel_momentum.shape != (3,):
             raise ValueError("initial_wheel_momentum must be a 3-vector")
+        self.initial_att_err_deg = np.asarray(self.initial_att_err_deg, dtype=float)
+        if self.initial_att_err_deg.shape != (3,):
+            raise ValueError("initial_att_err_deg must be a 3-vector")
 
 
 @dataclass

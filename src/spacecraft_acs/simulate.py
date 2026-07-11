@@ -16,7 +16,7 @@ from .estimator import Mekf
 from .guidance import Guidance
 from .momentum import MomentumManager
 from .sensors import SensorSuite
-from .stationkeeping import BurnController, PhasePlane
+from .stationkeeping import BurnController, HoldController, PhasePlane
 
 
 @dataclass
@@ -67,19 +67,30 @@ def run(config: Config) -> SimResult:
     sensors = SensorSuite(config.sensors, dt_ctrl)
     momentum_mgr = MomentumManager(config.thrusters, dt_ctrl)
 
-    # Stationkeeping burn: phase-plane thruster control, wheels held
+    # Stationkeeping thruster modes: delta-V burn (off-pulsed group) or
+    # zero-delta-V attitude hold (pure-torque couples); wheels held in both
     burn_ctrl = None
-    if config.stationkeeping.burn.delta_v > 0.0 and config.rcs.thrusters:
+    hold_ctrl = None
+    if config.stationkeeping.hold and config.rcs.thrusters:
+        hold_ctrl = HoldController(config.rcs, config.stationkeeping, dt_ctrl)
+        phase_plane = PhasePlane(config.stationkeeping.phase_plane, dt_ctrl)
+    elif config.stationkeeping.burn.delta_v > 0.0 and config.rcs.thrusters:
         burn_ctrl = BurnController(config.rcs, config.stationkeeping, dt_ctrl)
-        phase_plane = PhasePlane(config.stationkeeping.phase_plane)
-    n_burn = len(burn_ctrl.units) if burn_ctrl else 1
+        phase_plane = PhasePlane(config.stationkeeping.phase_plane, dt_ctrl)
+    thr_ctrl = hold_ctrl or burn_ctrl
+    n_burn = len(thr_ctrl.units) if thr_ctrl else 1
     dv = np.zeros(3)
     dv_done = False
 
-    # Start on the initial command (nadir attitude) with matching body rate
+    # Start on the initial command with matching body rate, offset by the
+    # configured initial attitude error (rotation vector, deg)
     q0_cmd, w0_cmd, _ = guidance.command(0.0)
+    q0 = q0_cmd
+    err0 = np.deg2rad(config.simulation.initial_att_err_deg)
+    if np.any(err0):
+        q0 = qt.multiply(q0_cmd, qt.from_rotation_vector(err0))
     x = sc.initial_state(
-        q=q0_cmd, omega=w0_cmd, h_wheel=config.simulation.initial_wheel_momentum
+        q=q0, omega=w0_cmd, h_wheel=config.simulation.initial_wheel_momentum
     )
 
     # MEKF: gyro propagation every cycle, star tracker updates decimated to
@@ -130,32 +141,36 @@ def run(config: Config) -> SimResult:
         else:
             q_used, omega_used = q_meas, omega_meas
 
-        # Stationkeeping burn window: starts at the configured time, ends
-        # when the accumulated delta-V along the burn direction reaches the
-        # target
-        burning = (
+        # Thruster-control window: attitude hold runs the whole sim; a burn
+        # starts at the configured time and ends when the accumulated
+        # delta-V along the burn direction reaches the target
+        burning = hold_ctrl is not None or (
             burn_ctrl is not None
             and t >= config.stationkeeping.burn.start_time_s
             and not dv_done
         )
 
         if burning:
-            # Thruster attitude control: phase plane + off-pulse allocation.
-            # Wheels are held (no torque) — thruster torques would saturate
-            # them in seconds.
+            # Thruster attitude control: phase plane + allocation. Wheels
+            # are held (no torque) — thruster torques would saturate them
+            # in seconds.
             q_err_m = qt.error(q_cmd, q_used)
             theta_m = 2.0 * q_err_m[1:]
             omega_err_m = omega_used - qt.dcm(q_err_m) @ omega_cmd
             u_pp = phase_plane.step(theta_m, omega_err_m)
-            duty, f_rcs, tau_rcs = burn_ctrl.step(u_pp)
+            duty, f_rcs, tau_rcs = thr_ctrl.step(u_pp)
             dv = dv + f_rcs / config.spacecraft.mass * dt_ctrl
-            if dv @ burn_ctrl.burn_dir >= config.stationkeeping.burn.delta_v:
+            if (
+                burn_ctrl is not None
+                and dv @ burn_ctrl.burn_dir >= config.stationkeeping.burn.delta_v
+            ):
                 dv_done = True
             out["pp_command"][k] = u_pp
             out["rcs_duty"][k] = duty
             u_cmd = np.zeros(3)
             u_applied = np.zeros(3)
             t_thr = np.zeros(3)
+            t_ff = np.zeros(3)
         else:
             tau_rcs = np.zeros(3)
             # Momentum unload: external thruster torque, optionally countered

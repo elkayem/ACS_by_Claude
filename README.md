@@ -103,7 +103,7 @@ poles at the coupled free-free frequency `ω√(J/(J−l²))` above it.
 - **MEKF estimator** (`estimator.py`) — 6-state multiplicative EKF (attitude
   error + gyro bias): gyro propagation every controller cycle, star tracker
   updates decimated to their own rate (default 8 Hz), Joseph-form update.
-  Default-on; delivers 1.4–3.8 arcsec attitude knowledge vs 10 arcsec raw ST
+  Default-on; delivers few-arcsec attitude knowledge vs 10 arcsec raw ST
   and a quieter torque command
 - **Momentum management** (`momentum.py`) — threshold-triggered thruster
   unload (the constant SRP pitch torque accumulates ~4.3 N·m·s/day):
@@ -178,13 +178,15 @@ in seconds) and a classical per-axis **phase plane** — switching function
 `s = θ + T_lead·ω` against a deadband with hysteresis, plus a hard rate
 limit — commands off-pulsing of the burn thrusters. A configurable CM
 offset produces the realistic constant disturbance torque that drives the
-burn limit cycle. The default deadband is ±0.25° — typical GEO practice,
-relaxing pointing during the few minutes of a burn in exchange for fewer
-thruster pulses (tighter is achievable with this authority if a payload
-requirement demands it). Demo (1 m/s north, four 10 N thrusters at 94%
-geometric efficiency): 86 s burn at 0.93 average duty, attitude riding at
-~0.16° inside the deadband, 19 mm/s cross-axis delta-V, 1.12 kg propellant
-at Isp 290 s.
+burn limit cycle. The default deadband is ±0.5° with a 30 s rate lead —
+tuned by the attitude-hold sweep (tighter deadbands with long leads chatter
+on slosh rate content; this point holds a near-ballistic limit cycle at
+~1–3 g/hr). Demo (1 m/s north, four 10 N thrusters at 94% geometric
+efficiency): 86 s burn at 0.93 average duty, attitude riding at ~0.29°
+inside the deadband, 19 mm/s cross-axis delta-V, 1.12 kg propellant at
+Isp 290 s. `acs hold` runs the zero-delta-V phase-plane attitude hold
+(pure-torque couples, 1° initial error) and `acs holdmc` its time-domain
+dispersion campaign.
 
 ![RCS thruster layout](docs/thrusters.svg)
 
@@ -219,10 +221,13 @@ forcing under thrust is not modeled.
 
 ## Default configuration
 
-`config/default.yaml` models a large GEO comsat: 8000/4500/6500 kg·m²
-inertia, four array modes at 0.10–0.55 Hz with ζ = 0.005 (25%/14%/19% modal
-inertia fraction in roll/pitch/yaw), 0.2 N·m / 68 N·m·s wheels, 16 Hz
-gyro/controller sampling with 8 Hz star tracker updates. The frequency
+`config/default.yaml` models a large GEO comsat: 3000 kg wet mass with
+15000/3000/14500 kg·m² inertia (north-south wings put roll/yaw at ~5×
+pitch), four array modes at 0.10–0.55 Hz with ζ = 0.005 (20%/21%/11% modal
+inertia fraction on their primary axes at drive angle 0), two propellant
+tanks (700/430 kg at 50% fill), 0.2 N·m / 68 N·m·s wheels, twelve 10 N RCS
+thrusters at Isp 290 s, and 16 Hz gyro/controller sampling with 8 Hz star
+tracker updates. The frequency
 analysis is a continuous-equivalent model of the discrete loop and is
 plotted only up to the 5×-highest-mode coverage, never past Nyquist.
 

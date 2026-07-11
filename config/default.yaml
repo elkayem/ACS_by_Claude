@@ -134,6 +134,16 @@ rcs:
     south: [N1, N2, N3, N4]  # thrust -Y
     east:  [W1, W2]          # thrust +X
     west:  [E1, E2]          # thrust -X
+  # Pure-torque couples for zero-delta-V attitude hold: opposite-face sets
+  # whose net force cancels exactly (about the nominal CM). Authority:
+  # roll +/-37 N*m, pitch +/-28 N*m, yaw +/-34 N*m.
+  couples:
+    roll+:  [S3, S4, N1, N2]
+    roll-:  [S1, S2, N3, N4]
+    pitch+: [E2, W1]
+    pitch-: [E1, W2]
+    yaw+:   [S1, S3, N2, N4]
+    yaw-:   [S2, S4, N1, N3]
 
 # Stationkeeping burn (`acs burn` enables delta_v if zero) with phase-plane
 # attitude control: wheels held, burn thrusters off-pulsed per axis when the
@@ -144,12 +154,15 @@ stationkeeping:
     delta_v: 0.0        # m/s along the group net-force direction; 0 = off
     start_time_s: 100.0
   phase_plane:
-    # Typical GEO stationkeeping deadband: pointing is relaxed to a few
-    # tenths of a degree during the burn in exchange for fewer thruster
-    # pulses (tighter deadbands are achievable with this authority but buy
-    # nothing absent a payload requirement for burn-time pointing)
-    deadband_deg: 0.25
-    rate_lead_s: 15.0
+    # Tuned by the attitude-hold sweep (deadband/hysteresis/lead vs
+    # propellant rate and slosh pumping): 0.5 deg / 0.3 / 30 s gives a
+    # near-ballistic hold limit cycle (~1 g/hr, slosh peak 0.14) where
+    # tighter deadbands with long lead chatter on slosh rate content
+    # (1.6 kg/hr at 0.25 deg / 30 s) and short leads pump slosh harder.
+    # Pointing is relaxed to ~0.5 deg during thruster modes - typical GEO
+    # practice; tighten only against a payload requirement and retune.
+    deadband_deg: 0.5
+    rate_lead_s: 30.0
     hysteresis: 0.3
     rate_limit_dps: 0.05
     mod_depth: 0.5      # off-pulse duty reduction on the opposing subset
@@ -216,7 +229,7 @@ guidance:
     # Post-slew ringing 2.9-5.5 arcsec across +/-30% slosh frequency error
     # (vs 35 arcsec at 0.001 deg/s^2). Smaller slews are quiet by amplitude,
     # larger ones by their naturally longer duration (~sqrt(angle)).
-    max_accel_dps2: 1.0e-4  # deg/s^2 (J*a ~ 0.014 N*m on roll)
+    max_accel_dps2: 1.0e-4  # deg/s^2 (J*a ~ 0.026 N*m on roll, well inside wheels)
 
 simulation:
   duration_s: 900.0

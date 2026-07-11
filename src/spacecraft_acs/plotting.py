@@ -284,10 +284,13 @@ def plot_burn(result, output_dir: Path) -> list[Path]:
     db = cfg.stationkeeping.phase_plane.deadband_deg
     lead = cfg.stationkeeping.phase_plane.rate_lead_s
 
+    # commanded pitch rate is the orbit rate only when nadir tracking
+    w_ref = np.rad2deg(-cfg.orbit_rate) if cfg.guidance.mode == "nadir" else 0.0
+
     fig, axs = plt.subplots(1, 3, figsize=(15, 5))
     for i, ax in enumerate(axs):
         th = result.att_err_deg[burn, i]
-        om = np.rad2deg(result.omega[burn, i]) - (0.0 if i != 1 else np.rad2deg(-cfg.orbit_rate))
+        om = np.rad2deg(result.omega[burn, i]) - (0.0 if i != 1 else w_ref)
         ax.plot(th, om, lw=0.7, color=AXIS_COLORS[i])
         ax.plot(th[0], om[0], "o", color="k", ms=5, label="start")
         # deadband switching lines: theta + lead*omega = +/-db
@@ -305,8 +308,8 @@ def plot_burn(result, output_dir: Path) -> list[Path]:
     )
     p1 = _save(fig, output_dir, "burn_phase_plane")
 
-    # Time histories, trimmed to the burn window plus recovery
-    t0 = cfg.stationkeeping.burn.start_time_s
+    # Time histories, trimmed to the thruster-control window plus recovery
+    t0 = t[burn][0] if np.any(burn) else cfg.stationkeeping.burn.start_time_s
     t_end = t[burn][-1] if np.any(burn) else t[-1]
     window = (t >= t0 - 50.0) & (t <= min(t[-1], t_end + 300.0))
     tw = t[window]
@@ -331,7 +334,7 @@ def plot_burn(result, output_dir: Path) -> list[Path]:
     )
 
     ax = axes[1]
-    w_cmd = np.array([0.0, -np.rad2deg(cfg.orbit_rate), 0.0])
+    w_cmd = np.array([0.0, w_ref, 0.0])
     for i in range(3):
         ax.plot(tw, np.rad2deg(result.omega[window, i]) - w_cmd[i],
                 color=AXIS_COLORS[i])

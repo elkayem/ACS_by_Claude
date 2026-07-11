@@ -93,6 +93,9 @@ def disperse(config: Config, disp: DispersionConfig, rng: np.random.Generator) -
             t.damping = float(np.exp(rng.uniform(np.log(lo), np.log(hi))))
             tanks.append(t)
         angle = rng.uniform(0.0, 360.0) if disp.array_angle else sc.array_angle_deg
+        cfg.rcs.cm_offset = cfg.rcs.cm_offset + rng.uniform(
+            -disp.cm_offset_m, disp.cm_offset_m, 3
+        )
         try:
             cfg.spacecraft = type(sc)(
                 inertia=inertia, modes=modes, mass=sc.mass, tanks=tanks,
@@ -139,6 +142,59 @@ def run(config: Config, progress=None) -> McResults:
         if progress and (i + 1) % 10 == 0:
             progress(f"  {i + 1}/{mc.n_runs} samples")
     return results
+
+
+def run_hold_campaign(config: Config, progress=None) -> list[dict]:
+    """Time-domain dispersion campaign for the thruster attitude hold:
+    dispersed plant (modes, slosh, inertia, array angle), dispersed CM
+    offset, and a random-direction initial attitude error. Scores
+    acquisition, post-acquisition pointing, propellant rate, and modal
+    pumping — the nonlinear analogue of the linear-margin Monte Carlo,
+    since relay dynamics have no margins to compute."""
+    mc = config.monte_carlo
+    rng = np.random.default_rng(mc.seed)
+    out = []
+    for i in range(mc.n_runs):
+        cfg = disperse(config, mc.dispersions, rng)
+        cfg.stationkeeping.hold = True
+        cfg.guidance.mode = "inertial"
+        cfg.guidance.step.angle_deg = 0.0
+        cfg.environment.gravity_gradient = False
+        axis = rng.standard_normal(3)
+        axis /= np.linalg.norm(axis)
+        cfg.simulation.initial_att_err_deg = axis * mc.dispersions.initial_err_deg
+        cfg.simulation.duration_s = 1800.0
+        res = simulate.run(cfg)
+
+        dt = res.t[1] - res.t[0]
+        db = cfg.stationkeeping.phase_plane.deadband_deg
+        err = np.linalg.norm(res.att_err_deg, axis=1)
+        inside = err < db
+        acq = None
+        span = int(60.0 / dt)
+        for k in range(len(inside) - span):
+            if np.all(inside[k : k + span]):
+                acq = res.t[k]
+                break
+        half = len(res.t) // 2
+        force = cfg.rcs.thrusters[0].force
+        imp_tail = float(np.sum(res.rcs_duty[half:]) * dt) * force
+        n_struct = len(cfg.spacecraft.modes)
+        out.append(
+            dict(
+                index=i,
+                acquired=acq is not None,
+                t_acq_s=acq,
+                err_max_deg=float(np.max(err[half:])),
+                prop_rate_g_hr=imp_tail / (cfg.rcs.isp_s * 9.80665)
+                / (res.t[-1] - res.t[half]) * 3.6e6,
+                slosh_pk=float(np.max(np.abs(res.eta[half:, n_struct:]))),
+                flex_pk=float(np.max(np.abs(res.eta[half:, :n_struct]))),
+            )
+        )
+        if progress and (i + 1) % 5 == 0:
+            progress(f"  {i + 1}/{mc.n_runs} hold runs")
+    return out
 
 
 def report(results: McResults) -> str:

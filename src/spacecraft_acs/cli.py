@@ -207,6 +207,87 @@ def cmd_burn(args) -> int:
     return 0
 
 
+def cmd_hold(args) -> int:
+    """Zero-delta-V thruster attitude hold from a 1-deg initial error."""
+    import copy
+
+    cfg = copy.deepcopy(config_mod.load(args.config))
+    cfg.stationkeeping.hold = True
+    cfg.guidance.mode = "inertial"  # inertially fixed hold target
+    cfg.guidance.step.angle_deg = 0.0
+    cfg.environment.gravity_gradient = False  # inertial hold: LVLH-based GG n/a
+    if not np.any(cfg.simulation.initial_att_err_deg):
+        cfg.simulation.initial_att_err_deg = np.ones(3) / np.sqrt(3.0)  # 1 deg
+    cfg.simulation.duration_s = max(cfg.simulation.duration_s, 900.0)
+    err0 = np.linalg.norm(cfg.simulation.initial_att_err_deg)
+    db = cfg.stationkeeping.phase_plane.deadband_deg
+    print(f"Thruster attitude hold: inertial target, initial error "
+          f"{err0:.2f} deg, deadband {db:.2f} deg...")
+    result = simulate.run(cfg)
+
+    dt = result.t[1] - result.t[0]
+    err_mag = np.linalg.norm(result.att_err_deg, axis=1)
+    inside = err_mag < db
+    acq_idx = None
+    for k in range(len(inside)):
+        if np.all(inside[k:min(k + int(60 / dt), len(inside))]):
+            acq_idx = k
+            break
+    t_acq = result.t[acq_idx] if acq_idx is not None else None
+    impulse = float(np.sum(result.rcs_duty) * dt) * cfg.rcs.thrusters[0].force
+    prop = impulse / (cfg.rcs.isp_s * 9.80665)
+    # steady-state propellant rate from the last half of the run
+    half = len(result.t) // 2
+    imp_tail = float(np.sum(result.rcs_duty[half:]) * dt) * cfg.rcs.thrusters[0].force
+    rate = imp_tail / (cfg.rcs.isp_s * 9.80665) / (result.t[-1] - result.t[half])
+    n_struct = len(cfg.spacecraft.modes)
+    print(f"acquisition (into {db:.2f} deg deadband): "
+          f"{'%.0f s' % t_acq if t_acq is not None else 'NOT ACQUIRED'}")
+    print(f"max |attitude error| after acquisition: "
+          f"{np.max(err_mag[acq_idx:]) if acq_idx is not None else np.max(err_mag):.3f} deg")
+    print(f"delta-V imparted (should be ~0): "
+          f"[{result.delta_v[-1][0] * 1000:+.1f} {result.delta_v[-1][1] * 1000:+.1f} "
+          f"{result.delta_v[-1][2] * 1000:+.1f}] mm/s")
+    print(f"propellant: {prop * 1000:.1f} g total; steady-state rate "
+          f"{rate * 3600 * 1000:.1f} g/hr")
+    print(f"peak flex modal disp: {np.max(np.abs(result.eta[:, :n_struct])):.4f}; "
+          f"peak slosh modal disp: {np.max(np.abs(result.eta[:, n_struct:])):.4f}")
+    for p in plotting.plot_burn(result, args.output_dir):
+        print(f"wrote {p}")
+    return 0
+
+
+def cmd_holdmc(args) -> int:
+    from . import montecarlo
+
+    cfg = config_mod.load(args.config)
+    cfg.monte_carlo.n_runs = args.runs
+    d = cfg.monte_carlo.dispersions
+    print(
+        f"Attitude-hold dispersion campaign: {args.runs} runs (modes/slosh/"
+        f"inertia/array angle dispersed, CM +/-{d.cm_offset_m * 100:.0f} cm, "
+        f"initial error {d.initial_err_deg:.1f} deg random direction)"
+    )
+    rows = montecarlo.run_hold_campaign(cfg, progress=print)
+    n_acq = sum(r["acquired"] for r in rows)
+    print(f"\nacquired: {n_acq}/{len(rows)}")
+    for name, key, unit in [
+        ("acquisition time", "t_acq_s", "s"),
+        ("post-acq max error", "err_max_deg", "deg"),
+        ("propellant rate", "prop_rate_g_hr", "g/hr"),
+        ("slosh peak (tail)", "slosh_pk", ""),
+        ("flex peak (tail)", "flex_pk", ""),
+    ]:
+        v = np.array([r[key] for r in rows if r[key] is not None], dtype=float)
+        if v.size:
+            print(f"  {name:>19}: median {np.median(v):8.2f}  "
+                  f"p95 {np.percentile(v, 95):8.2f}  max {np.max(v):8.2f} {unit}")
+    for r in rows:
+        if not r["acquired"]:
+            print(f"  FAILED to acquire: run {r['index']}")
+    return 0
+
+
 def cmd_thrusters(args) -> int:
     from . import stationkeeping
 
@@ -277,6 +358,19 @@ def main(argv=None) -> int:
     )
     _add_common(p_burn)
     p_burn.set_defaults(func=cmd_burn)
+
+    p_hold = sub.add_parser(
+        "hold", help="zero-delta-V thruster attitude hold (phase plane test)"
+    )
+    _add_common(p_hold)
+    p_hold.set_defaults(func=cmd_hold)
+
+    p_hmc = sub.add_parser(
+        "holdmc", help="attitude-hold dispersion campaign (time domain)"
+    )
+    _add_common(p_hmc)
+    p_hmc.add_argument("--runs", type=int, default=30)
+    p_hmc.set_defaults(func=cmd_holdmc)
 
     p_thr = sub.add_parser("thrusters", help="print the RCS geometry table")
     _add_common(p_thr)
