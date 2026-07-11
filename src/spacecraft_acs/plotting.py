@@ -327,15 +327,20 @@ def plot_burn(result, output_dir: Path, prefix: str = "burn") -> list[Path]:
             om_line, -db - lead * om_line, db - lead * om_line,
             color="#76d7ea", alpha=0.25, lw=0, label="attitude hold channel",
         )
-        om_pos = np.linspace(0.0, max(om.max(), rl), 20)
+        # Drift channels: horizontal rate bands outside the switching lines
+        # where the state coasts back toward the hold channel — bounded
+        # below by the drift rate the hysteresis establishes,
+        # (1-h)*db/lead, and above by the phase-plane rate limit.
+        w_dr = (1.0 - cfg.stationkeeping.phase_plane.hysteresis) * db / lead
+        om_pos = np.linspace(w_dr, max(om.max(), rl), 20)
         ax.fill_betweenx(
             om_pos, x_lo, -db - lead * om_pos,
-            color="#f9e79f", alpha=0.45, lw=0, label="drift channel",
+            color="#f9e79f", alpha=0.55, lw=0, label="drift channel",
         )
-        om_neg = np.linspace(min(om.min(), -rl), 0.0, 20)
+        om_neg = np.linspace(min(om.min(), -rl), -w_dr, 20)
         ax.fill_betweenx(
             om_neg, db - lead * om_neg, x_hi,
-            color="#f9e79f", alpha=0.45, lw=0,
+            color="#f9e79f", alpha=0.55, lw=0,
         )
         for s in (db, -db):
             ax.plot(s - lead * om_line, om_line, ls="--", color="0.5", lw=0.9)
