@@ -373,13 +373,13 @@ def plot_burn(result, output_dir: Path, prefix: str = "burn") -> list[Path]:
     ax.set_ylabel("delta-V [m/s]\n(body axes)")
 
     ax = axes[3]
-    from .stationkeeping import BurnController
+    n_thr = result.rcs_duty.shape[1]
+    if n_thr == len(cfg.rcs.thrusters):  # hold mode: all thrusters
+        names = [t.name for t in cfg.rcs.thrusters]
+    else:  # burn mode: the burn group
+        from .stationkeeping import BurnController
 
-    names = (
-        [u.name for u in BurnController(cfg.rcs, cfg.stationkeeping, 1.0).units]
-        if cfg.rcs.thrusters
-        else []
-    )
+        names = [u.name for u in BurnController(cfg.rcs, cfg.stationkeeping, 1.0).units]
     n_thr = result.rcs_duty.shape[1]
     for j in range(n_thr):
         label = names[j] if j < len(names) else f"thr {j}"
