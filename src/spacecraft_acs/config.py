@@ -225,6 +225,86 @@ class ThrusterConfig:
 
 
 @dataclass
+class ThrusterUnit:
+    """One RCS thruster: mounting position, thrust direction (the force it
+    puts on the spacecraft), and steady thrust force."""
+
+    name: str
+    position: np.ndarray  # m, body frame, from nominal CM
+    direction: np.ndarray  # unit vector, body frame
+    force: float = 10.0  # N
+
+    def __post_init__(self):
+        self.position = np.asarray(self.position, dtype=float)
+        self.direction = np.asarray(self.direction, dtype=float)
+        if self.position.shape != (3,) or self.direction.shape != (3,):
+            raise ValueError("thruster position and direction must be 3-vectors")
+        n = np.linalg.norm(self.direction)
+        if n == 0.0 or self.force <= 0.0:
+            raise ValueError("thruster direction must be nonzero, force positive")
+        self.direction = self.direction / n
+
+
+@dataclass
+class RcsConfig:
+    """Reaction control thruster set for stationkeeping burns."""
+
+    thrusters: list[ThrusterUnit] = field(default_factory=list)
+    groups: dict = field(default_factory=dict)  # burn group -> thruster names
+    cm_offset: np.ndarray = field(default_factory=lambda: np.zeros(3))  # m, actual-nominal
+    isp_s: float = 290.0
+    min_on_time_s: float = 0.02  # PWM quantization floor per cycle
+
+    def __post_init__(self):
+        self.cm_offset = np.asarray(self.cm_offset, dtype=float)
+        if self.cm_offset.shape != (3,):
+            raise ValueError("cm_offset must be a 3-vector")
+        names = [t.name for t in self.thrusters]
+        if len(set(names)) != len(names):
+            raise ValueError("thruster names must be unique")
+        for group, members in self.groups.items():
+            for m in members:
+                if m not in names:
+                    raise ValueError(f"group {group!r} references unknown thruster {m!r}")
+
+
+@dataclass
+class PhasePlaneConfig:
+    """Per-axis bang-bang attitude control during thruster burns."""
+
+    deadband_deg: float = 0.1
+    rate_lead_s: float = 15.0  # switching function s = theta + lead * omega
+    hysteresis: float = 0.3  # stop firing once |s| < hysteresis * deadband
+    rate_limit_dps: float = 0.05  # fire against rate regardless of attitude
+    mod_depth: float = 0.5  # off-pulse duty reduction on the opposing subset
+
+    def __post_init__(self):
+        if self.deadband_deg <= 0.0 or self.rate_lead_s < 0.0:
+            raise ValueError("deadband must be positive, rate lead >= 0")
+        if not 0.0 < self.hysteresis < 1.0:
+            raise ValueError("hysteresis must be in (0, 1)")
+        if not 0.0 < self.mod_depth <= 1.0:
+            raise ValueError("mod_depth must be in (0, 1]")
+
+
+@dataclass
+class BurnConfig:
+    group: str = "north"
+    delta_v: float = 0.0  # m/s along the group's net-force direction; 0 = off
+    start_time_s: float = 100.0
+
+    def __post_init__(self):
+        if self.delta_v < 0.0:
+            raise ValueError("delta_v must be >= 0")
+
+
+@dataclass
+class StationkeepingConfig:
+    burn: BurnConfig = field(default_factory=BurnConfig)
+    phase_plane: PhasePlaneConfig = field(default_factory=PhasePlaneConfig)
+
+
+@dataclass
 class EstimatorConfig:
     """Multiplicative EKF (attitude error + gyro bias). When disabled the
     controller consumes raw sensor outputs directly."""
@@ -437,6 +517,8 @@ class Config:
     sensors: SensorConfig = field(default_factory=SensorConfig)
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     thrusters: ThrusterConfig = field(default_factory=ThrusterConfig)
+    rcs: RcsConfig = field(default_factory=RcsConfig)
+    stationkeeping: StationkeepingConfig = field(default_factory=StationkeepingConfig)
     estimator: EstimatorConfig = field(default_factory=EstimatorConfig)
     controller: ControllerConfig = field(default_factory=ControllerConfig)
     guidance: GuidanceConfig = field(default_factory=GuidanceConfig)
@@ -483,12 +565,25 @@ def from_dict(raw: dict) -> Config:
     dispersions = DispersionConfig(**mc_raw.pop("dispersions", {}))
     monte_carlo = MonteCarloConfig(dispersions=dispersions, **mc_raw)
 
+    rcs_raw = dict(raw.get("rcs", {}))
+    rcs = RcsConfig(
+        thrusters=[ThrusterUnit(**t) for t in rcs_raw.pop("thrusters", [])],
+        **rcs_raw,
+    )
+    sk_raw = dict(raw.get("stationkeeping", {}))
+    stationkeeping = StationkeepingConfig(
+        burn=BurnConfig(**sk_raw.pop("burn", {})),
+        phase_plane=PhasePlaneConfig(**sk_raw.pop("phase_plane", {})),
+    )
+
     return Config(
         spacecraft=spacecraft,
         wheels=WheelConfig(**raw.get("wheels", {})),
         sensors=SensorConfig(**raw.get("sensors", {})),
         environment=environment,
         thrusters=thrusters,
+        rcs=rcs,
+        stationkeeping=stationkeeping,
         estimator=EstimatorConfig(**raw.get("estimator", {})),
         controller=controller,
         guidance=guidance,

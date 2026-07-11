@@ -276,6 +276,67 @@ def plot_monte_carlo(results, output_dir: Path) -> Path:
     return _save(fig, output_dir, "monte_carlo")
 
 
+def plot_burn(result, output_dir: Path) -> list[Path]:
+    """Stationkeeping burn: phase-plane trajectories and time histories."""
+    cfg = result.config
+    burn = result.burning
+    t = result.t
+    db = cfg.stationkeeping.phase_plane.deadband_deg
+    lead = cfg.stationkeeping.phase_plane.rate_lead_s
+
+    fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+    for i, ax in enumerate(axs):
+        th = result.att_err_deg[burn, i]
+        om = np.rad2deg(result.omega[burn, i]) - (0.0 if i != 1 else np.rad2deg(-cfg.orbit_rate))
+        ax.plot(th, om * 3600.0, lw=0.7, color=AXIS_COLORS[i])
+        ax.plot(th[0], om[0] * 3600.0, "o", color="k", ms=5, label="start")
+        # deadband switching lines: theta + lead*omega = +/-db
+        om_line = np.linspace(om.min() * 3600, om.max() * 3600, 10)
+        for s in (db, -db):
+            ax.plot(s - lead * om_line / 3600.0, om_line, ls="--", color="0.5", lw=0.9)
+        ax.set_xlabel(f"{AXIS_LABELS[i]} attitude error [deg]")
+        ax.set_ylabel("rate error [deg/hr]")
+        ax.set_title(f"phase plane — {AXIS_LABELS[i]}", fontsize=10)
+        ax.grid(alpha=0.3)
+    axs[0].legend(fontsize=8)
+    fig.suptitle(
+        f"Burn phase plane (deadband {db:.2f} deg, rate lead {lead:.0f} s)",
+        fontsize=11,
+    )
+    p1 = _save(fig, output_dir, "burn_phase_plane")
+
+    fig, axes = plt.subplots(4, 1, figsize=(10, 12), sharex=True)
+    ax = axes[0]
+    for i in range(3):
+        ax.plot(t, result.att_err_deg[:, i], color=AXIS_COLORS[i], label=AXIS_LABELS[i])
+    for s in (db, -db):
+        ax.axhline(s, color="0.5", ls="--", lw=0.8)
+    ax.set_ylabel("attitude error [deg]")
+    ax.legend(loc="upper right", fontsize=8)
+    ax.set_title("Stationkeeping burn — attitude, delta-V, thruster duties", fontsize=10)
+
+    ax = axes[1]
+    for i in range(3):
+        ax.plot(t, result.delta_v[:, i], color=AXIS_COLORS[i])
+    ax.set_ylabel("delta-V [m/s]\n(body axes)")
+
+    ax = axes[2]
+    n_thr = result.rcs_duty.shape[1]
+    for j in range(n_thr):
+        ax.plot(t, result.rcs_duty[:, j] + 1.1 * j, lw=0.6)
+    ax.set_ylabel("thruster duty\n(offset per unit)")
+
+    ax = axes[3]
+    for i in range(3):
+        ax.plot(t, result.pp_command[:, i] + 2.5 * i, color=AXIS_COLORS[i], lw=0.7)
+    ax.set_ylabel("phase-plane cmd\n(offset per axis)")
+    ax.set_xlabel("time [s]")
+    for ax in axes:
+        ax.grid(alpha=0.3)
+    p2 = _save(fig, output_dir, "burn_history")
+    return [p1, p2]
+
+
 def plot_bode(freq_data, output_dir: Path) -> list[Path]:
     """Open-loop Bode plots, one figure per axis, margins annotated."""
     paths = []

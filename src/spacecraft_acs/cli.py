@@ -153,6 +153,68 @@ def cmd_freq(args) -> int:
     return 0
 
 
+def cmd_burn(args) -> int:
+    """Stationkeeping delta-V burn with phase-plane attitude control."""
+    import copy
+
+    from . import stationkeeping
+
+    cfg = copy.deepcopy(config_mod.load(args.config))
+    if cfg.stationkeeping.burn.delta_v <= 0.0:
+        cfg.stationkeeping.burn.delta_v = 1.0  # m/s demo burn
+        print("stationkeeping.burn.delta_v is 0; running a 1.0 m/s demo burn")
+    cfg.guidance.step.angle_deg = 0.0  # nadir hold through the burn
+
+    burn = stationkeeping.BurnController(
+        cfg.rcs, cfg.stationkeeping, 1.0 / cfg.controller.rate_hz
+    )
+    f_net = np.linalg.norm(burn.forces.sum(axis=0))
+    t_burn_est = cfg.stationkeeping.burn.delta_v * cfg.spacecraft.mass / f_net
+    cfg.simulation.duration_s = max(
+        cfg.simulation.duration_s,
+        cfg.stationkeeping.burn.start_time_s + 1.6 * t_burn_est + 300.0,
+    )
+    print(
+        f"Burn group '{cfg.stationkeeping.burn.group}' "
+        f"({len(burn.units)} thrusters, {f_net:.1f} N net), target "
+        f"{cfg.stationkeeping.burn.delta_v:.2f} m/s along "
+        f"[{burn.burn_dir[0]:.2f} {burn.burn_dir[1]:.2f} {burn.burn_dir[2]:.2f}]..."
+    )
+    result = simulate.run(cfg)
+
+    burn_mask = result.burning
+    dt = result.t[1] - result.t[0]
+    t_burn = float(np.sum(burn_mask) * dt)
+    dv_final = result.delta_v[-1]
+    impulse = float(np.sum(result.rcs_duty[burn_mask]) * dt) * burn.units[0].force
+    prop = impulse / (cfg.rcs.isp_s * 9.80665)
+    att_burn = result.att_err_deg[burn_mask]
+    rate_burn = np.rad2deg(result.omega[burn_mask]) * 3600.0
+    print(f"burn duration: {t_burn:.0f} s "
+          f"(avg duty {np.mean(result.rcs_duty[burn_mask]):.2f})")
+    print(f"delta-V achieved [body]: [{dv_final[0]:+.3f} {dv_final[1]:+.3f} "
+          f"{dv_final[2]:+.3f}] m/s")
+    print(f"total impulse {impulse:.0f} N*s, propellant {prop * 1000:.0f} g "
+          f"(Isp {cfg.rcs.isp_s:.0f} s)")
+    print(f"attitude during burn: max |err| = "
+          f"[{np.max(np.abs(att_burn[:, 0])):.3f} {np.max(np.abs(att_burn[:, 1])):.3f} "
+          f"{np.max(np.abs(att_burn[:, 2])):.3f}] deg "
+          f"(deadband {cfg.stationkeeping.phase_plane.deadband_deg} deg)")
+    print(f"post-burn recovery: max |err| after burn = "
+          f"{np.max(np.abs(result.att_err_deg[~burn_mask & (result.t > cfg.stationkeeping.burn.start_time_s)])):.3f} deg")
+    for p in plotting.plot_burn(result, args.output_dir):
+        print(f"wrote {p}")
+    return 0
+
+
+def cmd_thrusters(args) -> int:
+    from . import stationkeeping
+
+    cfg = config_mod.load(args.config)
+    print(stationkeeping.thruster_table(cfg.rcs))
+    return 0
+
+
 def cmd_mc(args) -> int:
     from . import montecarlo
 
@@ -209,6 +271,16 @@ def main(argv=None) -> int:
     )
     _add_common(p_unl)
     p_unl.set_defaults(func=cmd_unload)
+
+    p_burn = sub.add_parser(
+        "burn", help="stationkeeping delta-V burn with phase-plane control"
+    )
+    _add_common(p_burn)
+    p_burn.set_defaults(func=cmd_burn)
+
+    p_thr = sub.add_parser("thrusters", help="print the RCS geometry table")
+    _add_common(p_thr)
+    p_thr.set_defaults(func=cmd_thrusters)
 
     p_mc = sub.add_parser(
         "mc", help="Monte Carlo plant-dispersion robustness analysis"

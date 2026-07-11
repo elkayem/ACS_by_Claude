@@ -170,6 +170,50 @@ attitude corrections are low-rate; the gyro path is direct). The
 `slow`-marked test in `tests/test_simulate.py` verifies the linear gain
 margin against nonlinear divergence.
 
+## Stationkeeping thruster mode
+
+`acs burn` runs a stationkeeping delta-V burn under thruster attitude
+control: the reaction wheels are held (thruster torques would saturate them
+in seconds) and a classical per-axis **phase plane** — switching function
+`s = θ + T_lead·ω` against a deadband with hysteresis, plus a hard rate
+limit — commands off-pulsing of the burn thrusters. A configurable CM
+offset produces the realistic constant disturbance torque that drives the
+burn limit cycle. Demo (1 m/s north, four 10 N thrusters at 94% geometric
+efficiency): 86 s burn at 0.93 average duty, attitude held within
+0.06° of the 0.1° deadband, 19 mm/s cross-axis delta-V, 1.12 kg propellant
+at Isp 290 s.
+
+![RCS thruster layout](docs/thrusters.svg)
+
+Geometry (also printed by `acs thrusters`; torque about the nominal CM —
+burn dynamics use the actual, offset CM). The four thrusters on each
+north/south face are canted 20° in ±Z with opposite senses top/bottom, so
+the plumes clear the array wing on that side while the group nets to pure
+force: differential off-pulsing then provides ±18.5 / ±6.2 / ±16.9 N·m of
+roll/pitch/yaw authority during the burn.
+
+| thruster | position [m] | thrust direction | force [N] | torque about CM [N·m] |
+|---|---|---|---|---|
+| N1 | ( 0.90,  1.15,  1.40) | (0, −0.940, −0.342) | 10 | ( +9.2, +3.1, −8.5) |
+| N2 | (−0.90,  1.15,  1.40) | (0, −0.940, −0.342) | 10 | ( +9.2, −3.1, +8.5) |
+| N3 | ( 0.90,  1.15, −1.40) | (0, −0.940, +0.342) | 10 | ( −9.2, −3.1, −8.5) |
+| N4 | (−0.90,  1.15, −1.40) | (0, −0.940, +0.342) | 10 | ( −9.2, +3.1, +8.5) |
+| S1 | ( 0.90, −1.15,  1.40) | (0, +0.940, −0.342) | 10 | ( −9.2, +3.1, +8.5) |
+| S2 | (−0.90, −1.15,  1.40) | (0, +0.940, −0.342) | 10 | ( −9.2, −3.1, −8.5) |
+| S3 | ( 0.90, −1.15, −1.40) | (0, +0.940, +0.342) | 10 | ( +9.2, −3.1, +8.5) |
+| S4 | (−0.90, −1.15, −1.40) | (0, +0.940, +0.342) | 10 | ( +9.2, +3.1, −8.5) |
+| E1 | ( 1.25,  0.00,  1.40) | (−1, 0, 0) | 10 | ( 0, −14.0, 0) |
+| E2 | ( 1.25,  0.00, −1.40) | (−1, 0, 0) | 10 | ( 0, +14.0, 0) |
+| W1 | (−1.25,  0.00,  1.40) | (+1, 0, 0) | 10 | ( 0, +14.0, 0) |
+| W2 | (−1.25,  0.00, −1.40) | (+1, 0, 0) | 10 | ( 0, −14.0, 0) |
+
+Burn groups: **north** ΔV = S1–S4 (net +37.6 N ŷ), **south** = N1–N4,
+**east** = W1–W2 (+20 N x̂), **west** = E1–E2 — every group has exactly zero
+net torque about the nominal CM. Scope notes: delta-V integrates in body
+axes (≈ orbital frame while attitude is held; no orbit propagation), and
+slosh sees only the rotational coupling during burns — translational slosh
+forcing under thrust is not modeled.
+
 ## Default configuration
 
 `config/default.yaml` models a large GEO comsat: 8000/4500/6500 kg·m²

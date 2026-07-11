@@ -16,6 +16,7 @@ from .estimator import Mekf
 from .guidance import Guidance
 from .momentum import MomentumManager
 from .sensors import SensorSuite
+from .stationkeeping import BurnController, PhasePlane
 
 
 @dataclass
@@ -36,6 +37,10 @@ class SimResult:
     est_att_err: np.ndarray  # (K, 3) estimator attitude error, rad (0 if off)
     est_bias_err: np.ndarray  # (K, 3) bias estimate - true bias, rad/s
     est_sigma: np.ndarray  # (K, 6) filter 1-sigma [att (rad), bias (rad/s)]
+    burning: np.ndarray  # (K,) bool, stationkeeping burn active
+    delta_v: np.ndarray  # (K, 3) accumulated delta-V, body axes, m/s
+    pp_command: np.ndarray  # (K, 3) phase-plane torque command in {-1,0,1}
+    rcs_duty: np.ndarray  # (K, n_burn_thrusters) duty per cycle
     att_err: np.ndarray  # (K, 3) attitude error rotation vector, rad
     config: Config = field(repr=False, default=None)
 
@@ -61,6 +66,15 @@ def run(config: Config) -> SimResult:
 
     sensors = SensorSuite(config.sensors, dt_ctrl)
     momentum_mgr = MomentumManager(config.thrusters, dt_ctrl)
+
+    # Stationkeeping burn: phase-plane thruster control, wheels held
+    burn_ctrl = None
+    if config.stationkeeping.burn.delta_v > 0.0 and config.rcs.thrusters:
+        burn_ctrl = BurnController(config.rcs, config.stationkeeping, dt_ctrl)
+        phase_plane = PhasePlane(config.stationkeeping.phase_plane)
+    n_burn = len(burn_ctrl.units) if burn_ctrl else 1
+    dv = np.zeros(3)
+    dv_done = False
 
     # Start on the initial command (nadir attitude) with matching body rate
     q0_cmd, w0_cmd, _ = guidance.command(0.0)
@@ -92,6 +106,10 @@ def run(config: Config) -> SimResult:
     out["est_att_err"] = np.zeros((n_samples, 3))
     out["est_bias_err"] = np.zeros((n_samples, 3))
     out["est_sigma"] = np.zeros((n_samples, 6))
+    out["burning"] = np.zeros(n_samples, dtype=bool)
+    out["delta_v"] = np.zeros((n_samples, 3))
+    out["pp_command"] = np.zeros((n_samples, 3))
+    out["rcs_duty"] = np.zeros((n_samples, n_burn))
     t_grid = np.arange(n_samples) * dt_ctrl
 
     saturated = False
@@ -112,27 +130,55 @@ def run(config: Config) -> SimResult:
         else:
             q_used, omega_used = q_meas, omega_meas
 
-        # Momentum unload: external thruster torque, optionally countered by
-        # a wheel feedforward so pointing only sees the saturation residual
-        t_thr = momentum_mgr.update(h_w)
-
-        # Rigid-body acceleration feedforward (command frame ~ body frame at
-        # small tracking error), plus thruster compensation
-        t_ff = np.zeros(3)
-        if config.controller.feedforward and np.any(alpha_cmd):
-            t_ff = t_ff + config.spacecraft.inertia @ alpha_cmd
-        if config.thrusters.unload.feedforward_compensation:
-            t_ff = t_ff - t_thr
-        u_cmd = pid.step(
-            q_used, omega_used, q_cmd, omega_cmd,
-            freeze_integrator=saturated,
-            torque_ff=t_ff if np.any(t_ff) else None,
+        # Stationkeeping burn window: starts at the configured time, ends
+        # when the accumulated delta-V along the burn direction reaches the
+        # target
+        burning = (
+            burn_ctrl is not None
+            and t >= config.stationkeeping.burn.start_time_s
+            and not dv_done
         )
-        u_applied = wheels.apply(u_cmd, h_w)
-        saturated = bool(np.any(np.abs(u_applied - u_cmd) > 1e-12))
+
+        if burning:
+            # Thruster attitude control: phase plane + off-pulse allocation.
+            # Wheels are held (no torque) — thruster torques would saturate
+            # them in seconds.
+            q_err_m = qt.error(q_cmd, q_used)
+            theta_m = 2.0 * q_err_m[1:]
+            omega_err_m = omega_used - qt.dcm(q_err_m) @ omega_cmd
+            u_pp = phase_plane.step(theta_m, omega_err_m)
+            duty, f_rcs, tau_rcs = burn_ctrl.step(u_pp)
+            dv = dv + f_rcs / config.spacecraft.mass * dt_ctrl
+            if dv @ burn_ctrl.burn_dir >= config.stationkeeping.burn.delta_v:
+                dv_done = True
+            out["pp_command"][k] = u_pp
+            out["rcs_duty"][k] = duty
+            u_cmd = np.zeros(3)
+            u_applied = np.zeros(3)
+            t_thr = np.zeros(3)
+        else:
+            tau_rcs = np.zeros(3)
+            # Momentum unload: external thruster torque, optionally countered
+            # by a wheel feedforward so pointing only sees the residual
+            t_thr = momentum_mgr.update(h_w)
+
+            # Rigid-body acceleration feedforward (command frame ~ body frame
+            # at small tracking error), plus thruster compensation
+            t_ff = np.zeros(3)
+            if config.controller.feedforward and np.any(alpha_cmd):
+                t_ff = t_ff + config.spacecraft.inertia @ alpha_cmd
+            if config.thrusters.unload.feedforward_compensation:
+                t_ff = t_ff - t_thr
+            u_cmd = pid.step(
+                q_used, omega_used, q_cmd, omega_cmd,
+                freeze_integrator=saturated,
+                torque_ff=t_ff if np.any(t_ff) else None,
+            )
+            u_applied = wheels.apply(u_cmd, h_w)
+            saturated = bool(np.any(np.abs(u_applied - u_cmd) > 1e-12))
 
         q_body_from_lvlh = qt.multiply(qt.conjugate(guidance.lvlh_attitude(t)), q)
-        t_dist = env.torque(t, q_body_from_lvlh) + t_thr
+        t_dist = env.torque(t, q_body_from_lvlh) + t_thr + tau_rcs
 
         q_err = qt.error(q_cmd, q)
         out["q"][k] = q
@@ -143,9 +189,11 @@ def run(config: Config) -> SimResult:
         out["q_cmd"][k] = q_cmd
         out["torque_cmd"][k] = u_cmd
         out["torque_applied"][k] = u_applied
-        out["torque_dist"][k] = t_dist - t_thr  # environment component only
-        out["torque_thruster"][k] = t_thr
+        out["torque_dist"][k] = t_dist - t_thr - tau_rcs  # environment only
+        out["torque_thruster"][k] = t_thr + tau_rcs
         out["unloading"][k] = momentum_mgr.unloading
+        out["burning"][k] = burning
+        out["delta_v"][k] = dv
         out["torque_ff"][k] = t_ff
         out["att_err"][k] = 2.0 * q_err[1:]
 

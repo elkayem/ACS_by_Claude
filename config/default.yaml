@@ -102,6 +102,54 @@ thrusters:
     rate_gain: 0.002   # 1/s: requested torque = gain * h_w (~0.08 N*m at trigger)
     feedforward_compensation: true  # wheels counter the thruster torque
 
+# Reaction-control thrusters for stationkeeping burns (see docs/thrusters.svg
+# and `acs thrusters` for the geometry table). Bus half-dimensions ~1.25 (x,
+# east/west) x 1.15 (y, north/south) x 1.75 (z, nadir/anti-nadir) m.
+#
+# The four thrusters on each north/south face sit at the face corners and
+# are canted 20 deg in +/-Z (opposite senses top/bottom) so the plumes clear
+# the array wing on that side AND the group's net torque and net radial
+# force are exactly zero with all four firing: pure delta-V, with 3-axis
+# differential (off-pulse) control authority of ~18.5 / 6.2 / 16.9 N*m in
+# roll / pitch / yaw. East/west pairs cover east-west stationkeeping.
+rcs:
+  isp_s: 290.0
+  min_on_time_s: 0.02
+  cm_offset: [0.02, 0.03, 0.05]  # m, actual CM minus nominal: burn disturbance
+  thrusters:
+    - {name: N1, position: [ 0.9,  1.15,  1.4], direction: [0.0, -0.940, -0.342], force: 10.0}
+    - {name: N2, position: [-0.9,  1.15,  1.4], direction: [0.0, -0.940, -0.342], force: 10.0}
+    - {name: N3, position: [ 0.9,  1.15, -1.4], direction: [0.0, -0.940,  0.342], force: 10.0}
+    - {name: N4, position: [-0.9,  1.15, -1.4], direction: [0.0, -0.940,  0.342], force: 10.0}
+    - {name: S1, position: [ 0.9, -1.15,  1.4], direction: [0.0,  0.940, -0.342], force: 10.0}
+    - {name: S2, position: [-0.9, -1.15,  1.4], direction: [0.0,  0.940, -0.342], force: 10.0}
+    - {name: S3, position: [ 0.9, -1.15, -1.4], direction: [0.0,  0.940,  0.342], force: 10.0}
+    - {name: S4, position: [-0.9, -1.15, -1.4], direction: [0.0,  0.940,  0.342], force: 10.0}
+    - {name: E1, position: [ 1.25, 0.0,  1.4], direction: [-1.0, 0.0, 0.0], force: 10.0}
+    - {name: E2, position: [ 1.25, 0.0, -1.4], direction: [-1.0, 0.0, 0.0], force: 10.0}
+    - {name: W1, position: [-1.25, 0.0,  1.4], direction: [ 1.0, 0.0, 0.0], force: 10.0}
+    - {name: W2, position: [-1.25, 0.0, -1.4], direction: [ 1.0, 0.0, 0.0], force: 10.0}
+  groups:
+    north: [S1, S2, S3, S4]  # thrust +Y: north delta-V (NSSK)
+    south: [N1, N2, N3, N4]  # thrust -Y
+    east:  [W1, W2]          # thrust +X
+    west:  [E1, E2]          # thrust -X
+
+# Stationkeeping burn (`acs burn` enables delta_v if zero) with phase-plane
+# attitude control: wheels held, burn thrusters off-pulsed per axis when the
+# switching function s = theta + rate_lead*omega leaves the deadband.
+stationkeeping:
+  burn:
+    group: north
+    delta_v: 0.0        # m/s along the group net-force direction; 0 = off
+    start_time_s: 100.0
+  phase_plane:
+    deadband_deg: 0.1
+    rate_lead_s: 15.0
+    hysteresis: 0.3
+    rate_limit_dps: 0.05
+    mod_depth: 0.5      # off-pulse duty reduction on the opposing subset
+
 controller:
   rate_hz: 16.0      # discrete execution rate = gyro sampling rate
   delay_s: 0.0       # additional computation delay (frequency analysis)
