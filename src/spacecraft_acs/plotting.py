@@ -305,31 +305,80 @@ def plot_burn(result, output_dir: Path) -> list[Path]:
     )
     p1 = _save(fig, output_dir, "burn_phase_plane")
 
-    fig, axes = plt.subplots(4, 1, figsize=(10, 12), sharex=True)
+    # Time histories, trimmed to the burn window plus recovery
+    t0 = cfg.stationkeeping.burn.start_time_s
+    t_end = t[burn][-1] if np.any(burn) else t[-1]
+    window = (t >= t0 - 50.0) & (t <= min(t[-1], t_end + 300.0))
+    tw = t[window]
+
+    fig, axes = plt.subplots(6, 1, figsize=(10, 16), sharex=True)
+
+    def shade(ax):
+        ax.axvspan(t0, t_end, color="#f5b041", alpha=0.12, lw=0)
+
     ax = axes[0]
     for i in range(3):
-        ax.plot(t, result.att_err_deg[:, i], color=AXIS_COLORS[i], label=AXIS_LABELS[i])
+        ax.plot(tw, result.att_err_deg[window, i], color=AXIS_COLORS[i],
+                label=AXIS_LABELS[i])
     for s in (db, -db):
         ax.axhline(s, color="0.5", ls="--", lw=0.8)
+    shade(ax)
     ax.set_ylabel("attitude error [deg]")
     ax.legend(loc="upper right", fontsize=8)
-    ax.set_title("Stationkeeping burn — attitude, delta-V, thruster duties", fontsize=10)
+    ax.set_title(
+        "Stationkeeping burn (shaded) — attitude, rates, delta-V, thruster "
+        "duties, slosh", fontsize=10,
+    )
 
     ax = axes[1]
+    w_cmd = np.array([0.0, -np.rad2deg(cfg.orbit_rate), 0.0]) * 3600.0
     for i in range(3):
-        ax.plot(t, result.delta_v[:, i], color=AXIS_COLORS[i])
-    ax.set_ylabel("delta-V [m/s]\n(body axes)")
+        ax.plot(tw, np.rad2deg(result.omega[window, i]) * 3600.0 - w_cmd[i],
+                color=AXIS_COLORS[i])
+    rate_lim = cfg.stationkeeping.phase_plane.rate_limit_dps * 3600.0
+    for s in (rate_lim, -rate_lim):
+        ax.axhline(s, color="0.5", ls=":", lw=0.8)
+    shade(ax)
+    ax.set_ylabel("rate error [deg/hr]\n(dotted: PP rate limit)")
 
     ax = axes[2]
-    n_thr = result.rcs_duty.shape[1]
-    for j in range(n_thr):
-        ax.plot(t, result.rcs_duty[:, j] + 1.1 * j, lw=0.6)
-    ax.set_ylabel("thruster duty\n(offset per unit)")
+    for i in range(3):
+        ax.plot(tw, result.delta_v[window, i], color=AXIS_COLORS[i])
+    shade(ax)
+    ax.set_ylabel("delta-V [m/s]\n(body axes)")
 
     ax = axes[3]
+    from .stationkeeping import BurnController
+
+    names = (
+        [u.name for u in BurnController(cfg.rcs, cfg.stationkeeping, 1.0).units]
+        if cfg.rcs.thrusters
+        else []
+    )
+    n_thr = result.rcs_duty.shape[1]
+    for j in range(n_thr):
+        label = names[j] if j < len(names) else f"thr {j}"
+        ax.plot(tw, result.rcs_duty[window, j] + 1.1 * j, lw=0.6, label=label)
+    shade(ax)
+    ax.legend(loc="upper right", fontsize=7, ncol=n_thr)
+    ax.set_ylabel("thruster duty\n(offset per unit)")
+
+    ax = axes[4]
     for i in range(3):
-        ax.plot(t, result.pp_command[:, i] + 2.5 * i, color=AXIS_COLORS[i], lw=0.7)
+        ax.plot(tw, result.pp_command[window, i] + 2.5 * i,
+                color=AXIS_COLORS[i], lw=0.7)
+    shade(ax)
     ax.set_ylabel("phase-plane cmd\n(offset per axis)")
+
+    ax = axes[5]
+    n_struct = len(cfg.spacecraft.modes)
+    all_modes = cfg.spacecraft.all_modes
+    for j in range(n_struct, len(all_modes)):
+        ax.plot(tw, result.eta[window, j], lw=0.8,
+                label=f"slosh {j - n_struct + 1} ({all_modes[j].freq_hz:.3f} Hz)")
+    shade(ax)
+    ax.legend(loc="upper right", fontsize=7, ncol=2)
+    ax.set_ylabel("slosh modal disp.\n[√kg·m·rad]")
     ax.set_xlabel("time [s]")
     for ax in axes:
         ax.grid(alpha=0.3)
