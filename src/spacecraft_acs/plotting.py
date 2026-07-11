@@ -315,15 +315,31 @@ def plot_burn(result, output_dir: Path, prefix: str = "burn") -> list[Path]:
         om = np.rad2deg(result.omega[burn, i]) - (0.0 if i != 1 else w_ref)
         ax.plot(th, om, lw=0.7, color=AXIS_COLORS[i])
         ax.plot(th[0], om[0], "o", color="k", ms=5, label="start")
-        # deadband switching lines: theta + lead*omega = +/-db, with the
-        # drift channel (coast corridor between the lines) shaded
-        om_line = np.linspace(om.min(), om.max(), 10)
+        # Attitude hold channel (cyan): the coast corridor between the
+        # switching lines theta + lead*omega = +/-db. Drift channels
+        # (yellow): outside the lines at bounded rate, where the vehicle
+        # coasts back toward the hold channel after a firing.
+        rl = cfg.stationkeeping.phase_plane.rate_limit_dps
+        x_lo = min(th.min(), -db - lead * om.max()) - 0.1
+        x_hi = max(th.max(), db - lead * om.min()) + 0.1
+        om_line = np.linspace(min(om.min(), -rl), max(om.max(), rl), 40)
         ax.fill_betweenx(
             om_line, -db - lead * om_line, db - lead * om_line,
-            color="#7fb3d5", alpha=0.15, lw=0, label="drift channel",
+            color="#76d7ea", alpha=0.25, lw=0, label="attitude hold channel",
+        )
+        om_pos = np.linspace(0.0, max(om.max(), rl), 20)
+        ax.fill_betweenx(
+            om_pos, x_lo, -db - lead * om_pos,
+            color="#f9e79f", alpha=0.45, lw=0, label="drift channel",
+        )
+        om_neg = np.linspace(min(om.min(), -rl), 0.0, 20)
+        ax.fill_betweenx(
+            om_neg, db - lead * om_neg, x_hi,
+            color="#f9e79f", alpha=0.45, lw=0,
         )
         for s in (db, -db):
             ax.plot(s - lead * om_line, om_line, ls="--", color="0.5", lw=0.9)
+        ax.set_xlim(x_lo, x_hi)
         ax.set_xlabel(f"{AXIS_LABELS[i]} attitude error [deg]")
         ax.set_ylabel("rate error [deg/s]")
         ax.set_title(f"phase plane — {AXIS_LABELS[i]}", fontsize=10)

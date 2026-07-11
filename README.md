@@ -155,6 +155,8 @@ Quaternion-error feedback PID executed at a configurable discrete rate
 
 ### Frequency-domain analysis (`linearize.py`)
 
+![Open-loop Bode overlay, all axes](output/bode_overlay.png)
+
 Margins are computed **loop-at-a-time on the coupled 3-axis flexible
 plant**: the full `[θ(3), ω(3), η, η̇]` state space (complete inertia tensor
 and participation matrix) with one axis's loop broken for measurement while
