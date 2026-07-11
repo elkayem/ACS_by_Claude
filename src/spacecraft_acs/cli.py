@@ -1,4 +1,4 @@
-"""Command-line interface: `acs step` and `acs freq`."""
+﻿"""Command-line interface: `acs step` and `acs freq`."""
 
 from __future__ import annotations
 
@@ -252,7 +252,7 @@ def cmd_hold(args) -> int:
           f"{rate * 3600 * 1000:.1f} g/hr")
     print(f"peak flex modal disp: {np.max(np.abs(result.eta[:, :n_struct])):.4f}; "
           f"peak slosh modal disp: {np.max(np.abs(result.eta[:, n_struct:])):.4f}")
-    for p in plotting.plot_burn(result, args.output_dir):
+    for p in plotting.plot_burn(result, args.output_dir, prefix="hold"):
         print(f"wrote {p}")
     return 0
 
@@ -285,6 +285,7 @@ def cmd_holdmc(args) -> int:
     for r in rows:
         if not r["acquired"]:
             print(f"  FAILED to acquire: run {r['index']}")
+    print(f"wrote {plotting.plot_hold_campaign(rows, args.output_dir)}")
     return 0
 
 

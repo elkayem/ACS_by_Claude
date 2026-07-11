@@ -276,8 +276,30 @@ def plot_monte_carlo(results, output_dir: Path) -> Path:
     return _save(fig, output_dir, "monte_carlo")
 
 
-def plot_burn(result, output_dir: Path) -> list[Path]:
-    """Stationkeeping burn: phase-plane trajectories and time histories."""
+def plot_hold_campaign(rows, output_dir: Path) -> Path:
+    """Attitude-hold dispersion campaign: metric histograms."""
+    fig, axs = plt.subplots(1, 4, figsize=(16, 4))
+    specs = [
+        ("t_acq_s", "acquisition time [s]"),
+        ("prop_rate_g_hr", "propellant rate [g/hr]"),
+        ("slosh_pk", "slosh peak (tail)"),
+        ("err_max_deg", "post-acq max error [deg]"),
+    ]
+    for ax, (key, label) in zip(axs, specs):
+        v = np.array([r[key] for r in rows if r[key] is not None], dtype=float)
+        ax.hist(v, bins=12, color="#2980b9", alpha=0.85)
+        ax.set_xlabel(label)
+        ax.grid(alpha=0.3)
+    n_fail = sum(not r["acquired"] for r in rows)
+    fig.suptitle(
+        f"Attitude-hold dispersion campaign — {len(rows)} runs, "
+        f"{n_fail} failed to acquire", fontsize=12,
+    )
+    return _save(fig, output_dir, "hold_mc")
+
+
+def plot_burn(result, output_dir: Path, prefix: str = "burn") -> list[Path]:
+    """Thruster-mode phase-plane trajectories and time histories."""
     cfg = result.config
     burn = result.burning
     t = result.t
@@ -306,7 +328,7 @@ def plot_burn(result, output_dir: Path) -> list[Path]:
         f"Burn phase plane (deadband {db:.2f} deg, rate lead {lead:.0f} s)",
         fontsize=11,
     )
-    p1 = _save(fig, output_dir, "burn_phase_plane")
+    p1 = _save(fig, output_dir, f"{prefix}_phase_plane")
 
     # Time histories, trimmed to the thruster-control window plus recovery
     t0 = t[burn][0] if np.any(burn) else cfg.stationkeeping.burn.start_time_s
@@ -385,7 +407,7 @@ def plot_burn(result, output_dir: Path) -> list[Path]:
     ax.set_xlabel("time [s]")
     for ax in axes:
         ax.grid(alpha=0.3)
-    p2 = _save(fig, output_dir, "burn_history")
+    p2 = _save(fig, output_dir, f"{prefix}_history")
     return [p1, p2]
 
 
