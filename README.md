@@ -178,9 +178,12 @@ in seconds) and a classical per-axis **phase plane** — switching function
 `s = θ + T_lead·ω` against a deadband with hysteresis, plus a hard rate
 limit — commands off-pulsing of the burn thrusters. A configurable CM
 offset produces the realistic constant disturbance torque that drives the
-burn limit cycle. Demo (1 m/s north, four 10 N thrusters at 94% geometric
-efficiency): 86 s burn at 0.93 average duty, attitude held within
-0.06° of the 0.1° deadband, 19 mm/s cross-axis delta-V, 1.12 kg propellant
+burn limit cycle. The default deadband is ±0.25° — typical GEO practice,
+relaxing pointing during the few minutes of a burn in exchange for fewer
+thruster pulses (tighter is achievable with this authority if a payload
+requirement demands it). Demo (1 m/s north, four 10 N thrusters at 94%
+geometric efficiency): 86 s burn at 0.93 average duty, attitude riding at
+~0.16° inside the deadband, 19 mm/s cross-axis delta-V, 1.12 kg propellant
 at Isp 290 s.
 
 ![RCS thruster layout](docs/thrusters.svg)

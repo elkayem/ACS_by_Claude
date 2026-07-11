@@ -288,14 +288,14 @@ def plot_burn(result, output_dir: Path) -> list[Path]:
     for i, ax in enumerate(axs):
         th = result.att_err_deg[burn, i]
         om = np.rad2deg(result.omega[burn, i]) - (0.0 if i != 1 else np.rad2deg(-cfg.orbit_rate))
-        ax.plot(th, om * 3600.0, lw=0.7, color=AXIS_COLORS[i])
-        ax.plot(th[0], om[0] * 3600.0, "o", color="k", ms=5, label="start")
+        ax.plot(th, om, lw=0.7, color=AXIS_COLORS[i])
+        ax.plot(th[0], om[0], "o", color="k", ms=5, label="start")
         # deadband switching lines: theta + lead*omega = +/-db
-        om_line = np.linspace(om.min() * 3600, om.max() * 3600, 10)
+        om_line = np.linspace(om.min(), om.max(), 10)
         for s in (db, -db):
-            ax.plot(s - lead * om_line / 3600.0, om_line, ls="--", color="0.5", lw=0.9)
+            ax.plot(s - lead * om_line, om_line, ls="--", color="0.5", lw=0.9)
         ax.set_xlabel(f"{AXIS_LABELS[i]} attitude error [deg]")
-        ax.set_ylabel("rate error [deg/hr]")
+        ax.set_ylabel("rate error [deg/s]")
         ax.set_title(f"phase plane — {AXIS_LABELS[i]}", fontsize=10)
         ax.grid(alpha=0.3)
     axs[0].legend(fontsize=8)
@@ -331,15 +331,15 @@ def plot_burn(result, output_dir: Path) -> list[Path]:
     )
 
     ax = axes[1]
-    w_cmd = np.array([0.0, -np.rad2deg(cfg.orbit_rate), 0.0]) * 3600.0
+    w_cmd = np.array([0.0, -np.rad2deg(cfg.orbit_rate), 0.0])
     for i in range(3):
-        ax.plot(tw, np.rad2deg(result.omega[window, i]) * 3600.0 - w_cmd[i],
+        ax.plot(tw, np.rad2deg(result.omega[window, i]) - w_cmd[i],
                 color=AXIS_COLORS[i])
-    rate_lim = cfg.stationkeeping.phase_plane.rate_limit_dps * 3600.0
+    rate_lim = cfg.stationkeeping.phase_plane.rate_limit_dps
     for s in (rate_lim, -rate_lim):
         ax.axhline(s, color="0.5", ls=":", lw=0.8)
     shade(ax)
-    ax.set_ylabel("rate error [deg/hr]\n(dotted: PP rate limit)")
+    ax.set_ylabel("rate error [deg/s]\n(dotted: PP rate limit)")
 
     ax = axes[2]
     for i in range(3):

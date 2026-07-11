@@ -144,7 +144,11 @@ stationkeeping:
     delta_v: 0.0        # m/s along the group net-force direction; 0 = off
     start_time_s: 100.0
   phase_plane:
-    deadband_deg: 0.1
+    # Typical GEO stationkeeping deadband: pointing is relaxed to a few
+    # tenths of a degree during the burn in exchange for fewer thruster
+    # pulses (tighter deadbands are achievable with this authority but buy
+    # nothing absent a payload requirement for burn-time pointing)
+    deadband_deg: 0.25
     rate_lead_s: 15.0
     hysteresis: 0.3
     rate_limit_dps: 0.05
