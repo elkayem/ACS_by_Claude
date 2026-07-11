@@ -157,37 +157,37 @@ controller:
   # Gains are computed per axis from the design rule (Kp = J*wn^2,
   # Kd = 2*zeta*J*wn, Ki = Kp*wn/integral_time_factor) unless kp/ki/kd are
   # given explicitly below.
-  # All-angle robustness-first design (selected by Monte Carlo: 100% pass
-  # at inertia +/-10%, mode freq +/-15%, damping 0.005-0.01, participation
-  # +/-20%, slosh dispersed, and solar array angle uniform over the full
-  # revolution). Because the arrays rotate daily, roll and yaw exchange the
-  # two bending modes and are designed symmetrically: identical bandwidth
-  # and the full notch complement on both axes. Pitch (torsion only,
-  # angle-invariant) runs ~3x faster.
+  # Post-sysID all-angle robust design (selected by Monte Carlo: 100% pass
+  # at inertia +/-10%, ARRAY MODE FREQ +/-5%, damping 0.005-0.01,
+  # participation +/-20%, slosh freq +/-50%, array angle uniform over the
+  # revolution).
+  #
+  # DERIVED OPERATIONS REQUIREMENT: on-orbit modal identification of the
+  # array bending modes to +/-5% frequency. That knowledge lets the notches
+  # narrow (damping 0.40 vs 1.0), halving their crossover phase lag, which
+  # buys roll/yaw bandwidth 7.5 -> 20 mHz. The payoff is slosh rejection:
+  # crossover sits ~2x above the dispersed slosh band, so |S| at 10 mHz
+  # improves from +0.9 dB (mild amplification) to -13.4 dB (active damping).
+  # Roll and yaw stay symmetric (the daily array rotation exchanges their
+  # bending modes); pitch carries only the angle-invariant torsion mode.
   design:
-    bandwidth_hz: [0.0075, 0.022, 0.0075]  # roll, pitch, yaw
+    bandwidth_hz: [0.020, 0.030, 0.020]  # roll, pitch, yaw
     damping: 0.75
     integral_time_factor: 15.0  # longer Ti trims integrator lag at crossover
   # kp: [...]   # explicit per-axis gains override the design rule
   # ki: [...]
   # kd: [...]
-  # Structural filters: wide notches (damping 1.0) centered on each coupled
-  # band cover +/-15% modal frequency uncertainty, participation-driven
-  # coupling shifts, AND the angle-dependent slide of the coupled frequency
-  # as participation sweeps between roll and yaw. Roll-offs are per-axis,
-  # ~5.5x crossover on roll/yaw and 4.5x on pitch, lightly damped (0.4) for
-  # -40 dB/dec at the modes at about half the Butterworth phase cost.
   filters:
-    - {type: notch, freq_hz: 0.112, damping: 1.0, depth_db: 45.0, axes: roll}   # 1st out-of-plane bending band
-    - {type: notch, freq_hz: 0.157, damping: 1.0, depth_db: 40.0, axes: roll}   # 1st in-plane bending band
-    - {type: notch, freq_hz: 0.558, damping: 0.6, depth_db: 30.0, axes: roll}   # 2nd bending band
-    - {type: notch, freq_hz: 0.112, damping: 1.0, depth_db: 45.0, axes: yaw}
-    - {type: notch, freq_hz: 0.157, damping: 1.0, depth_db: 40.0, axes: yaw}
-    - {type: notch, freq_hz: 0.558, damping: 0.6, depth_db: 30.0, axes: yaw}
-    - {type: notch, freq_hz: 0.393, damping: 1.0, depth_db: 35.0, axes: pitch}  # torsion (coupled, J_pitch=3000)
-    - {type: lowpass, freq_hz: 0.062, damping: 0.4, axes: roll}
-    - {type: lowpass, freq_hz: 0.148, damping: 0.4, axes: pitch}
-    - {type: lowpass, freq_hz: 0.062, damping: 0.4, axes: yaw}
+    - {type: notch, freq_hz: 0.110, damping: 0.40, depth_db: 42.0, axes: roll}  # 1st out-of-plane bending band
+    - {type: notch, freq_hz: 0.158, damping: 0.40, depth_db: 38.0, axes: roll}  # 1st in-plane bending band
+    - {type: notch, freq_hz: 0.558, damping: 0.40, depth_db: 30.0, axes: roll}  # 2nd bending band
+    - {type: notch, freq_hz: 0.110, damping: 0.40, depth_db: 42.0, axes: yaw}
+    - {type: notch, freq_hz: 0.158, damping: 0.40, depth_db: 38.0, axes: yaw}
+    - {type: notch, freq_hz: 0.558, damping: 0.40, depth_db: 30.0, axes: yaw}
+    - {type: notch, freq_hz: 0.393, damping: 0.50, depth_db: 35.0, axes: pitch} # torsion (coupled, J_pitch=3000)
+    - {type: lowpass, freq_hz: 0.280, damping: 0.4, axes: roll}
+    - {type: lowpass, freq_hz: 0.202, damping: 0.4, axes: pitch}
+    - {type: lowpass, freq_hz: 0.280, damping: 0.4, axes: yaw}
 
 guidance:
   mode: nadir   # track the LVLH frame (z to nadir) at orbit rate
@@ -230,7 +230,9 @@ monte_carlo:
   time_domain: false    # also run the nonlinear sim per sample (slower)
   dispersions:
     inertia_pct: 10.0
-    mode_freq_pct: 15.0            # matches the notch-width design assumption
+    # +/-5% REQUIRES on-orbit modal identification of the array modes (the
+    # pre-ID design point at +/-15% needs the wide-notch 7.5 mHz gains)
+    mode_freq_pct: 5.0
     mode_damping_range: [0.005, 0.01]  # structural damping floor 0.5%
     participation_pct: 20.0
     # Slosh predictions are far softer than structural-mode predictions.

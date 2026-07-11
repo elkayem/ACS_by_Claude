@@ -227,24 +227,31 @@ The control design is **robustness-first across the full daily array
 revolution**, selected by Monte Carlo pass rate rather than nominal margins
 alone. Because the arrays rotate about pitch once per day, the two bending
 modes exchange between roll and yaw, so those axes are designed
-symmetrically: identical 7.5 mHz bandwidth and the full three-notch
-complement (both bending bands + 2nd bending) on each. Pitch carries only
-the angle-invariant torsion mode and runs 3× faster (22 mHz). Wide notches
-(damping 1.0) cover ±15% modal frequency uncertainty, participation
-dispersion, and the angle-dependent slide of each coupled resonance;
-per-axis lightly damped roll-offs sit at ~5.5× (roll/yaw) and 4.5× (pitch)
-crossover; ζ_cl = 0.75 with a long integral time (Ti factor 15) balances
-the GM/PM budget that the dual notches squeeze.
+symmetrically with the full three-notch complement on each; pitch carries
+only the angle-invariant torsion mode. ζ_cl = 0.75 with a long integral
+time (Ti factor 15) balances the GM/PM budget the notches squeeze.
 
-Results (slosh and array angle included): nominal GM 7.2–8.7 dB, PM
-34.6–42.3°, closed-loop BW 27/110/26 mHz — and under the full dispersion
-set (inertia ±10%, mode frequency ±15%, damping 0.005–0.01, participation
-±20%, slosh frequency ±50%, mass ±30%, damping 0.004–0.02, array angle
-uniform over [0, 360)°, 100 samples) **100% of samples meet GM ≥ 6 dB,
-PM ≥ 30°, and every mode is either gain-stabilized (peak ≤ −6 dB) or
-phase-stabilized (|S| ≤ 6 dB through the mode — the disk-margin condition),
-with zero unstable cases** (worst-case sample: GM 6.4 dB, PM 33.0°, all
-mode peaks ≤ −21 dB).
+There are **two design points**, distinguished by how well the array modes
+are known:
+
+- **Pre-ID (±15% mode frequency)**: wide notches (damping 1.0) cap roll/yaw
+  at 7.5 mHz. Robust with no calibration beyond a test-correlated FEM — but
+  crossover then sits *inside* the dispersed slosh band, and |S| at 10 mHz
+  is +0.9 dB: the loop mildly amplifies slosh-band disturbances.
+- **Post-ID (±5%, the default)**: with the array bending modes identified
+  on orbit to ±5% — a **derived operations requirement** — the notches
+  narrow to damping 0.40, halving their crossover phase lag, and roll/yaw
+  bandwidth rises to **20 mHz** (pitch 30 mHz). Crossover now sits ~2×
+  above the dispersed slosh band and |S| at 10 mHz improves 14 dB to
+  **−13.4 dB**: the loop actively damps slosh instead of coexisting with
+  it. Margins are simultaneously *better* (100-sample MC worst case:
+  GM 7.0 dB, PM 35.1°, zero unstable, zero mode violations, array angle
+  dispersed over the full revolution).
+
+Both points pass the Monte Carlo at 100% against GM ≥ 6 dB, PM ≥ 30°, and
+the gain-stabilized-or-disk-margin mode criterion; the pre-ID gains remain
+documented here as the safe initial-operations configuration until the
+modal survey is complete.
 
 **Derived tank requirement — slosh damping ≥ 0.004 (PMD-class).** With
 bare-tank damping (ζ floor 0.001) the pass rate falls to ~65% (min PM 15°):
