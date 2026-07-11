@@ -144,6 +144,7 @@ def cmd_freq(args) -> int:
     print(linearize.report(data))
     paths = (
         plotting.plot_bode(data, args.output_dir)
+        + [plotting.plot_bode_overlay(data, args.output_dir)]
         + plotting.plot_nichols(data, args.output_dir)
         + plotting.plot_closed_loop(data, args.output_dir)
     )
@@ -226,7 +227,7 @@ def cmd_hold(args) -> int:
     result = simulate.run(cfg)
 
     dt = result.t[1] - result.t[0]
-    err_mag = np.linalg.norm(result.att_err_deg, axis=1)
+    err_mag = np.max(np.abs(result.att_err_deg), axis=1)  # per-axis worst
     inside = err_mag < db
     acq_idx = None
     for k in range(len(inside)):

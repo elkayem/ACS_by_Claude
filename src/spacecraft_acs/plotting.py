@@ -315,8 +315,13 @@ def plot_burn(result, output_dir: Path, prefix: str = "burn") -> list[Path]:
         om = np.rad2deg(result.omega[burn, i]) - (0.0 if i != 1 else w_ref)
         ax.plot(th, om, lw=0.7, color=AXIS_COLORS[i])
         ax.plot(th[0], om[0], "o", color="k", ms=5, label="start")
-        # deadband switching lines: theta + lead*omega = +/-db
+        # deadband switching lines: theta + lead*omega = +/-db, with the
+        # drift channel (coast corridor between the lines) shaded
         om_line = np.linspace(om.min(), om.max(), 10)
+        ax.fill_betweenx(
+            om_line, -db - lead * om_line, db - lead * om_line,
+            color="#7fb3d5", alpha=0.15, lw=0, label="drift channel",
+        )
         for s in (db, -db):
             ax.plot(s - lead * om_line, om_line, ls="--", color="0.5", lw=0.9)
         ax.set_xlabel(f"{AXIS_LABELS[i]} attitude error [deg]")
@@ -450,6 +455,28 @@ def plot_bode(freq_data, output_dir: Path) -> list[Path]:
             ax.grid(True, which="both", alpha=0.3)
         paths.append(_save(fig, output_dir, f"bode_{'xyz'[d.axis]}"))
     return paths
+
+
+def plot_bode_overlay(freq_data, output_dir: Path) -> Path:
+    """All three open-loop Bode plots on one figure, margins in the legend."""
+    fig, (ax_mag, ax_ph) = plt.subplots(2, 1, figsize=(10, 9), sharex=True)
+    for d in freq_data:
+        label = (
+            f"{AXIS_LABELS[d.axis]} — GM {_fmt(d.gm_db, 'dB')}, "
+            f"PM {_fmt(d.pm_deg, 'deg')}"
+        )
+        ax_mag.semilogx(d.freq_hz, d.mag_db, color=AXIS_COLORS[d.axis], label=label)
+        ax_ph.semilogx(d.freq_hz, d.phase_deg, color=AXIS_COLORS[d.axis])
+    ax_mag.axhline(0.0, color="0.4", lw=0.8)
+    ax_ph.axhline(-180.0, color="0.4", lw=0.8)
+    ax_mag.set_ylabel("|L(jω)| [dB]")
+    ax_ph.set_ylabel("∠L(jω) [deg]")
+    ax_ph.set_xlabel("frequency [Hz]")
+    ax_mag.set_title("Open-loop Bode — all axes")
+    ax_mag.legend(fontsize=9)
+    for ax in (ax_mag, ax_ph):
+        ax.grid(True, which="both", alpha=0.3)
+    return _save(fig, output_dir, "bode_overlay")
 
 
 def plot_nichols(freq_data, output_dir: Path) -> list[Path]:

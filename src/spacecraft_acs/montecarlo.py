@@ -168,7 +168,9 @@ def run_hold_campaign(config: Config, progress=None) -> list[dict]:
 
         dt = res.t[1] - res.t[0]
         db = cfg.stationkeeping.phase_plane.deadband_deg
-        err = np.linalg.norm(res.att_err_deg, axis=1)
+        # per-axis test, matching what the per-axis relay regulates (the
+        # error NORM of three sub-deadband components can exceed db)
+        err = np.max(np.abs(res.att_err_deg), axis=1)
         inside = err < db
         acq = None
         span = int(60.0 / dt)

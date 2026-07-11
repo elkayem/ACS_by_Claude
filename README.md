@@ -30,11 +30,15 @@ pytest            # run the verification suite
 ## Usage
 
 ```sh
-acs step    --config config/default.yaml --output-dir output  # time domain
-acs freq    --config config/default.yaml --output-dir output  # frequency domain
-acs compare --config config/default.yaml --output-dir output  # slew vs step
-acs unload  --config config/default.yaml --output-dir output  # momentum dump
-acs mc      --config config/default.yaml --output-dir output  # Monte Carlo
+acs step      --config config/default.yaml --output-dir output  # time domain
+acs freq      --config config/default.yaml --output-dir output  # frequency domain
+acs compare   --config config/default.yaml --output-dir output  # slew vs step
+acs unload    --config config/default.yaml --output-dir output  # momentum dump
+acs mc        --config config/default.yaml --output-dir output  # Monte Carlo
+acs burn      --config config/default.yaml --output-dir output  # delta-V burn
+acs hold      --config config/default.yaml --output-dir output  # thruster hold
+acs holdmc    --runs 30                    --output-dir output  # hold dispersions
+acs thrusters --config config/default.yaml                      # RCS geometry table
 ```
 
 `acs step` runs the nonlinear closed-loop simulation of a commanded attitude
