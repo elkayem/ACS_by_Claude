@@ -194,34 +194,25 @@ class EnvironmentConfig:
 
 @dataclass
 class UnloadConfig:
-    """Momentum unload logic thresholds (per body axis, N*m*s)."""
+    """Reaction-wheel momentum unload policy. The actuation is the RCS
+    couples (rcs.couples): when a wheel axis exceeds `trigger`, the manager
+    fires the couple opposing that axis's momentum in minimum-impulse pulses
+    until every axis is below `target`. Because the couple torque comes from
+    real thruster force x moment arm, a single min-impulse pulse is far
+    larger than the wheels can cancel, so unloads produce a real pointing
+    transient (schedule them outside precision-pointing windows)."""
 
-    trigger: float = 40.0  # start unloading when any |h_w| exceeds this
-    target: float = 2.0  # stop when all |h_w| are below this
-    rate_gain: float = 0.02  # 1/s: commanded unload torque = gain * h_w
-    feedforward_compensation: bool = True  # wheels counter thruster torque
+    enabled: bool = False
+    trigger: float = 40.0  # N*m*s: start unloading when any |h_w| exceeds this
+    target: float = 2.0  # N*m*s: stop when all |h_w| are below this
+    rate_gain: float = 0.02  # 1/s: requested unload torque = gain * h_w
+    feedforward_compensation: bool = True  # wheels counter the couple torque
 
     def __post_init__(self):
         if not 0.0 < self.target < self.trigger:
             raise ValueError("unload thresholds must satisfy 0 < target < trigger")
         if self.rate_gain <= 0.0:
             raise ValueError("unload rate_gain must be positive")
-
-
-@dataclass
-class ThrusterConfig:
-    """On/off attitude thrusters used for momentum unloads. Pulses are
-    width-modulated within each controller cycle with a minimum on-time
-    (minimum impulse bit)."""
-
-    enabled: bool = False
-    torque: float = 1.0  # N*m per axis while firing
-    min_on_time_s: float = 0.02  # minimum pulse width
-    unload: UnloadConfig = field(default_factory=UnloadConfig)
-
-    def __post_init__(self):
-        if self.torque <= 0.0 or self.min_on_time_s <= 0.0:
-            raise ValueError("thruster torque and min on-time must be positive")
 
 
 @dataclass
@@ -551,7 +542,7 @@ class Config:
     wheels: WheelConfig = field(default_factory=WheelConfig)
     sensors: SensorConfig = field(default_factory=SensorConfig)
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
-    thrusters: ThrusterConfig = field(default_factory=ThrusterConfig)
+    unload: UnloadConfig = field(default_factory=UnloadConfig)
     rcs: RcsConfig = field(default_factory=RcsConfig)
     stationkeeping: StationkeepingConfig = field(default_factory=StationkeepingConfig)
     estimator: EstimatorConfig = field(default_factory=EstimatorConfig)
@@ -592,9 +583,7 @@ def from_dict(raw: dict) -> Config:
     srp = SrpConfig(**env_raw.pop("srp", {}))
     environment = EnvironmentConfig(srp=srp, **env_raw)
 
-    thr_raw = dict(raw.get("thrusters", {}))
-    unload = UnloadConfig(**thr_raw.pop("unload", {}))
-    thrusters = ThrusterConfig(unload=unload, **thr_raw)
+    unload = UnloadConfig(**raw.get("unload", {}))
 
     mc_raw = dict(raw.get("monte_carlo", {}))
     dispersions = DispersionConfig(**mc_raw.pop("dispersions", {}))
@@ -616,7 +605,7 @@ def from_dict(raw: dict) -> Config:
         wheels=WheelConfig(**raw.get("wheels", {})),
         sensors=SensorConfig(**raw.get("sensors", {})),
         environment=environment,
-        thrusters=thrusters,
+        unload=unload,
         rcs=rcs,
         stationkeeping=stationkeeping,
         estimator=EstimatorConfig(**raw.get("estimator", {})),

@@ -53,10 +53,12 @@ with acceleration feedforward, once as a raw quaternion step without — and
 overlays attitude error, rate, torque, and modal response, with a metrics
 table (settling time, overshoot, peak torque, flex ringing).
 
-`acs unload` demonstrates a thruster momentum dump during nadir hold: wheel
-momentum decay through the trigger/target thresholds, the quantized pulse
-train, and the pointing transient (arcsec-level with wheel feedforward
-compensation of each pulse).
+`acs unload` demonstrates an RCS-couple momentum dump during nadir hold:
+wheel momentum decay through the trigger/target thresholds, the min-impulse
+couple pulse train, the real propellant spent, and the pointing transient
+each pulse causes (the couple bit exceeds wheel torque authority, so the
+wheels cannot hide it — a faithful consequence of using real thruster
+geometry).
 
 `acs mc` runs the plant-dispersion Monte Carlo (`--runs N`, `--time-domain`):
 the controller stays fixed while inertia, mode frequencies, damping, and
@@ -137,10 +139,17 @@ poles at the coupled free-free frequency `ω√(J/(J−l²))` above it.
   updates decimated to their own rate (default 8 Hz), Joseph-form update.
   Default-on; delivers few-arcsec attitude knowledge vs 10 arcsec raw ST
   and a quieter torque command
-- **Momentum management** (`momentum.py`) — threshold-triggered thruster
-  unload (the constant SRP pitch torque accumulates ~4.3 N·m·s/day):
-  bang-bang-with-deadband law, minimum-impulse-bit pulse quantization via an
-  impulse-debt accumulator, and wheel feedforward compensation of each pulse
+- **Momentum management** (`momentum.py`) — threshold-triggered wheel unload
+  (the constant SRP pitch torque accumulates ~4.3 N·m·s/day) actuated by the
+  **RCS couples** (`rcs.couples`): the couple opposing each axis's momentum
+  fires in minimum-impulse pulses, with couple torque = real force × moment
+  arm about the actual CM, the same geometry the attitude-hold mode uses.
+  Because a single min-impulse couple bit (~0.7 N·m·s with 10 N thrusters)
+  far exceeds the reaction-wheel torque authority, unloads produce a real
+  pointing transient (feedforward lets the wheels absorb only what their
+  saturation limit allows) — so the average unload torque is held near
+  `rate_gain·|h|` below wheel authority, and unloads are scheduled outside
+  precision-pointing windows. `acs unload` reports the real propellant spent
 - **Propellant slosh** (`slosh.py`) — each tank's first lateral mode as an
   equivalent spring-mass (Abramson SP-106 slosh-mass-fraction fit vs fill
   fraction), reduced by momentum elimination to two rotational modes per

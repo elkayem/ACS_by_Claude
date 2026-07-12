@@ -153,19 +153,23 @@ def plot_unload(result, output_dir: Path) -> Path:
     for i in range(3):
         ax.plot(t, result.h_wheel[:, i], color=AXIS_COLORS[i], label=AXIS_LABELS[i])
     for level, style in [
-        (cfg.thrusters.unload.trigger, "--"),
-        (cfg.thrusters.unload.target, ":"),
+        (cfg.unload.trigger, "--"),
+        (cfg.unload.target, ":"),
     ]:
         for s in (1, -1):
             ax.axhline(s * level, color="0.5", ls=style, lw=0.8)
     ax.set_ylabel("wheel momentum [N·m·s]")
     ax.legend(loc="upper right", fontsize=8)
+    from .momentum import MomentumManager
+
+    mm = MomentumManager(cfg.unload, cfg.rcs, 1.0 / cfg.controller.rate_hz)
     ax.set_title(
-        "Momentum unload — trigger "
-        f"{cfg.thrusters.unload.trigger:.0f} N·m·s (dashed), target "
-        f"{cfg.thrusters.unload.target:.0f} N·m·s (dotted), "
-        f"min impulse {cfg.thrusters.torque * cfg.thrusters.min_on_time_s:.2f} N·m·s",
-        fontsize=10,
+        "Momentum unload (RCS couples) — trigger "
+        f"{cfg.unload.trigger:.0f} N·m·s (dashed), target "
+        f"{cfg.unload.target:.0f} N·m·s (dotted), "
+        f"min couple impulse {mm.min_impulse:.2f} N·m·s, "
+        f"propellant {result.unload_propellant_kg * 1000:.0f} g",
+        fontsize=9,
     )
 
     ax = axes[1]

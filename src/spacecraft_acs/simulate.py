@@ -42,6 +42,7 @@ class SimResult:
     pp_command: np.ndarray  # (K, 3) phase-plane torque command in {-1,0,1}
     rcs_duty: np.ndarray  # (K, n_burn_thrusters) duty per cycle
     att_err: np.ndarray  # (K, 3) attitude error rotation vector, rad
+    unload_propellant_kg: float = 0.0  # RCS propellant spent on wheel unloads
     config: Config = field(repr=False, default=None)
 
     @property
@@ -65,7 +66,7 @@ def run(config: Config) -> SimResult:
     n_samples = int(np.floor(config.simulation.duration_s / dt_ctrl)) + 1
 
     sensors = SensorSuite(config.sensors, dt_ctrl)
-    momentum_mgr = MomentumManager(config.thrusters, dt_ctrl)
+    momentum_mgr = MomentumManager(config.unload, config.rcs, dt_ctrl)
 
     # Stationkeeping thruster modes: delta-V burn (off-pulsed group) or
     # zero-delta-V attitude hold (pure-torque couples); wheels held in both
@@ -182,7 +183,7 @@ def run(config: Config) -> SimResult:
             t_ff = np.zeros(3)
             if config.controller.feedforward and np.any(alpha_cmd):
                 t_ff = t_ff + config.spacecraft.inertia @ alpha_cmd
-            if config.thrusters.unload.feedforward_compensation:
+            if config.unload.feedforward_compensation:
                 t_ff = t_ff - t_thr
             u_cmd = pid.step(
                 q_used, omega_used, q_cmd, omega_cmd,
@@ -220,7 +221,10 @@ def run(config: Config) -> SimResult:
         for _ in range(config.simulation.substeps):
             x = sc.rk4_step(x, dt_int, u_applied, t_dist)
 
-    return SimResult(t=t_grid, config=config, **out)
+    return SimResult(
+        t=t_grid, config=config,
+        unload_propellant_kg=momentum_mgr.propellant_kg, **out,
+    )
 
 
 @dataclass

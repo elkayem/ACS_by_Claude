@@ -83,24 +83,19 @@ environment:
     constant: [1.0e-5, 5.0e-5, 1.0e-5]            # N*m, body frame
     harmonic_amplitude: [5.0e-5, 0.0, 5.0e-5]     # N*m at orbit rate
 
-# Momentum unload thrusters. The constant pitch SRP torque accumulates
-# ~4.3 N*m*s/day, so the wheels need an unload roughly every 1-2 weeks.
-# Pulses are width-modulated per controller cycle with a minimum impulse bit
-# of torque * min_on_time_s; the proportional request accumulates until a
-# full minimum pulse is warranted (intermittent pulse train).
-thrusters:
+# Reaction-wheel momentum unload policy. The constant pitch SRP torque
+# accumulates ~4.3 N*m*s/day, so the wheels need an unload roughly every
+# 1-2 weeks. The actuation is the RCS couples below (rcs.couples) fired in
+# minimum-impulse pulses — real force x moment arm, not an abstract torque.
+# Note: a single min-impulse couple pulse (~0.7 N*m*s) far exceeds the wheel
+# torque limit, so unloads DO disturb pointing; schedule them outside
+# precision-pointing windows.
+unload:
   enabled: false       # `acs unload` enables this for its demo
-  # Thruster torque is sized so a minimum pulse's cycle-average (torque *
-  # min_on_time / ctrl period = 0.6*0.02/0.0625 = 0.19 N*m) stays inside
-  # the wheel torque limit, so the feedforward compensation can fully
-  # cancel each pulse.
-  torque: 0.6          # N*m per axis while firing
-  min_on_time_s: 0.02  # minimum pulse width -> 0.012 N*m*s impulse bit
-  unload:
-    trigger: 40.0      # N*m*s: start unload when any axis exceeds
-    target: 2.0        # N*m*s: stop when all axes below
-    rate_gain: 0.002   # 1/s: requested torque = gain * h_w (~0.08 N*m at trigger)
-    feedforward_compensation: true  # wheels counter the thruster torque
+  trigger: 40.0        # N*m*s: start unload when any axis exceeds
+  target: 2.0          # N*m*s: stop when all axes below
+  rate_gain: 0.002     # 1/s: requested torque = gain * h_w (sets pulse density)
+  feedforward_compensation: true  # wheels absorb what they can of the couple
 
 # Reaction-control thrusters for stationkeeping burns (see docs/thrusters.svg
 # and `acs thrusters` for the geometry table). Bus half-dimensions ~1.25 (x,

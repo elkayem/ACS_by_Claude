@@ -99,30 +99,28 @@ def cmd_unload(args) -> int:
     import copy
 
     cfg = copy.deepcopy(config_mod.load(args.config))
-    cfg.thrusters.enabled = True
+    cfg.unload.enabled = True
     cfg.guidance.step.angle_deg = 0.0  # quiet nadir hold, unload only
-    if np.all(
-        np.abs(cfg.simulation.initial_wheel_momentum) < cfg.thrusters.unload.trigger
-    ):
-        h0 = 1.05 * cfg.thrusters.unload.trigger
+    u = cfg.unload
+    if np.all(np.abs(cfg.simulation.initial_wheel_momentum) < u.trigger):
+        h0 = 1.05 * u.trigger
         cfg.simulation.initial_wheel_momentum = np.array([h0, -h0, 0.6 * h0])
         print(
             f"initial wheel momentum below trigger; seeding [{h0:.1f}, {-h0:.1f}, "
             f"{0.6 * h0:.1f}] N*m*s to demonstrate an unload"
         )
-    # Proportional unload has time constant 1/rate_gain; cover the full decay
+    # Proportional unload has time constant ~1/rate_gain; cover the decay
     # from trigger to target plus margin
-    u = cfg.thrusters.unload
     t_unload = np.log(u.trigger / u.target) / u.rate_gain
     cfg.simulation.duration_s = max(cfg.simulation.duration_s, 1.6 * t_unload)
-    print(f"Running {cfg.simulation.duration_s:.0f} s nadir hold with unload...")
+    print(f"Running {cfg.simulation.duration_s:.0f} s nadir hold with unload "
+          f"(RCS couples, force x moment arm)...")
     result = simulate.run(cfg)
 
     h0 = np.abs(result.h_wheel[0])
     h_end = np.abs(result.h_wheel[-1])
     firing = np.any(result.torque_thruster != 0.0, axis=1)
     dt = result.t[1] - result.t[0]
-    impulse = float(np.sum(np.abs(result.torque_thruster)) * dt)
     done = not bool(result.unloading[-1])
     duration = float(np.sum(result.unloading) * dt)
     err_peak = float(np.max(np.abs(result.att_err_deg))) * 3600.0
@@ -130,8 +128,10 @@ def cmd_unload(args) -> int:
           f"[{h_end[0]:.2f}, {h_end[1]:.2f}, {h_end[2]:.2f}] N*m*s "
           f"({'complete' if done else 'still unloading'} after {duration:.0f} s)")
     print(f"thruster firing cycles: {int(np.sum(firing))}, "
-          f"total impulse {impulse:.1f} N*m*s")
-    print(f"peak pointing error during unload: {err_peak:.1f} arcsec")
+          f"propellant {result.unload_propellant_kg * 1000:.0f} g "
+          f"(Isp {cfg.rcs.isp_s:.0f} s)")
+    print(f"peak pointing error during unload: {err_peak:.0f} arcsec "
+          "(unloads disturb pointing — schedule outside precision windows)")
     path = plotting.plot_unload(result, args.output_dir)
     print(f"wrote {path}")
     return 0
