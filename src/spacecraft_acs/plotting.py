@@ -320,19 +320,22 @@ def _shade_phase_plane(ax, pp, x_lo, x_hi, y_lo, y_hi, labels=False):
     om_n = np.linspace(y0, max(-wdr, y0), 30)
     ax.fill_betweenx(om_n, np.clip(db - lead * om_n, x_lo, x_hi), x_hi,
                      color="#f9e79f", lw=0)
-    # firing regions: everything above/below the rate limit, plus outside
-    # the switching lines at sub-drift return rates
-    fire = dict(color="#f5c6bd", lw=0)
+    # firing regions, distinct colors: negative firing (thrusters command
+    # u = -1) is everything above the rate limit plus right of the +db
+    # switching line at sub-drift return rates; positive firing (u = +1)
+    # mirrors it below/left.
+    neg = dict(color="#f1948a", lw=0)  # negative firing (u = -1)
+    pos = dict(color="#d2b4de", lw=0)  # positive firing (u = +1)
     if y_hi > rl:
         ax.fill_betweenx([rl, y_hi], x_lo, x_hi,
-                         label=lab("negative firing"), **fire)
+                         label=lab("negative firing (u = -1)"), **neg)
     if y_lo < -rl:
         ax.fill_betweenx([y_lo, -rl], x_lo, x_hi,
-                         label=lab("positive firing"), **fire)
+                         label=lab("positive firing (u = +1)"), **pos)
     om_fp = np.linspace(max(-wdr, y0), y1, 30)
-    ax.fill_betweenx(om_fp, np.clip(db - lead * om_fp, x_lo, x_hi), x_hi, **fire)
+    ax.fill_betweenx(om_fp, np.clip(db - lead * om_fp, x_lo, x_hi), x_hi, **neg)
     om_fn = np.linspace(y0, min(wdr, y1), 30)
-    ax.fill_betweenx(om_fn, x_lo, np.clip(-db - lead * om_fn, x_lo, x_hi), **fire)
+    ax.fill_betweenx(om_fn, x_lo, np.clip(-db - lead * om_fn, x_lo, x_hi), **pos)
     # switching lines, only where they border a firing region
     om_hi = om[om > -wdr]
     om_lo = om[om < wdr]
@@ -347,11 +350,18 @@ def plot_phase_plane_logic(cfg, output_dir: Path) -> Path:
     x = 1.3 * (pp.deadband_deg + pp.rate_lead_s * pp.rate_limit_dps)
     y = 1.3 * pp.rate_limit_dps
     fig, ax = plt.subplots(figsize=(9, 6))
-    _shade_phase_plane(ax, pp, -x, x, -y, y, labels=True)
+    _shade_phase_plane(ax, pp, -x, x, -y, y, labels=False)
     ax.axhline(0, color="0.3", lw=0.8)
     ax.axvline(0, color="0.3", lw=0.8)
     ax.set_xlim(-x, x)
     ax.set_ylim(-y, y)
+    rl, wdr = pp.rate_limit_dps, pp.min_drift_rate_dps
+    txt = dict(ha="center", va="center", fontsize=11, fontweight="bold")
+    ax.text(0.0, 0.5 * (rl + y), "negative firing (u = −1)", color="#922b21", **txt)
+    ax.text(0.0, -0.5 * (rl + y), "positive firing (u = +1)", color="#5b2c6f", **txt)
+    ax.text(-0.62 * x, 0.5 * (wdr + rl), "drift", color="#7d6608", **txt)
+    ax.text(0.62 * x, -0.5 * (wdr + rl), "drift", color="#7d6608", **txt)
+    ax.text(0.0, 0.0, "hold\n(coast)", color="#0e6251", **txt)
     ax.set_xlabel("attitude error [deg]")
     ax.set_ylabel("rate error [deg/s]")
     ax.set_title(
@@ -359,7 +369,6 @@ def plot_phase_plane_logic(cfg, output_dir: Path) -> Path:
         f"{pp.rate_lead_s:.0f}, min_drift_rate_dps {pp.min_drift_rate_dps}, "
         f"rate_limit_dps {pp.rate_limit_dps}", fontsize=10,
     )
-    ax.legend(loc="upper right", fontsize=9)
     ax.grid(alpha=0.3)
     return _save(fig, output_dir, "phase_plane_logic")
 
@@ -399,8 +408,9 @@ def plot_burn(result, output_dir: Path, prefix: str = "burn") -> list[Path]:
         ax.set_title(f"phase plane — {AXIS_LABELS[i]}", fontsize=10)
         ax.grid(alpha=0.3)
     axs[0].legend(fontsize=8)
+    mode = "Attitude hold" if prefix == "hold" else "Burn"
     fig.suptitle(
-        f"Burn phase plane (deadband {db:.2f} deg, rate lead {lead:.0f} s)",
+        f"{mode} phase plane (deadband {db:.2f} deg, rate lead {lead:.0f} s)",
         fontsize=11,
     )
     p1 = _save(fig, output_dir, f"{prefix}_phase_plane")
