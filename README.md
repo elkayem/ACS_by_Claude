@@ -71,6 +71,34 @@ The console report lists GM/PM with crossover frequencies, closed-loop
 bandwidth and peaks (Mt, Ms), and the peak open-loop gain at each flexible
 resonance (gain-stabilization check).
 
+`acs burn` runs a stationkeeping delta-V burn under thruster (phase-plane)
+attitude control with the wheels held: it prints the achieved delta-V,
+burn duration and duty, total impulse and propellant, and the peak attitude
+excursion inside the deadband, and writes the phase-plane and burn
+time-history plots. Defaults to a 1 m/s north burn if `stationkeeping.burn.
+delta_v` is zero. See the [stationkeeping section](#stationkeeping-thruster-mode)
+for the phase-plane logic.
+
+`acs hold` runs the zero-delta-V thruster attitude hold: an inertially fixed
+target commanded from a 1° initial error, held with pure-torque couples and
+the phase plane (drift channel included). It reports acquisition time,
+post-acquisition pointing, propellant total and rate, and modal excitation,
+and writes the phase-plane trajectory, time history, and the standalone
+phase-plane logic map (`phase_plane_logic.png`).
+
+`acs holdmc` runs the attitude-hold dispersion campaign (`--runs N`): the
+hold is repeated over dispersed plants (modes, slosh, inertia, array angle),
+dispersed CM offset, and a random-direction initial error, reporting the
+acquisition rate and the distributions of acquisition time, propellant rate,
+and slosh/flex pumping, with a histogram figure. This is the nonlinear
+analogue of `acs mc` — a relay controller has no margins to linearize, so it
+is scored by time-domain outcomes.
+
+`acs thrusters` prints the RCS geometry table (each thruster's position,
+thrust direction, force, and torque about the nominal CM) and the net force
+and torque of each burn group and attitude-control couple. See also
+[docs/thrusters.svg](docs/thrusters.svg) for the layout drawing.
+
 ## Model
 
 ### Flexible dynamics (`dynamics.py`)
