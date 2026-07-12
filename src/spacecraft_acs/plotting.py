@@ -342,8 +342,12 @@ def plot_burn(result, output_dir: Path, prefix: str = "burn") -> list[Path]:
             om_neg, db - lead * om_neg, x_hi,
             color="#f9e79f", alpha=0.55, lw=0,
         )
-        for s in (db, -db):
-            ax.plot(s - lead * om_line, om_line, ls="--", color="0.5", lw=0.9)
+        # Switching lines dashed only where they border a FIRING region —
+        # not along the drift channel, where coast simply continues
+        om_hi = om_line[om_line > -w_dr]
+        om_lo_seg = om_line[om_line < w_dr]
+        ax.plot(db - lead * om_hi, om_hi, ls="--", color="0.5", lw=0.9)
+        ax.plot(-db - lead * om_lo_seg, om_lo_seg, ls="--", color="0.5", lw=0.9)
         ax.set_xlim(x_lo, x_hi)
         ax.set_xlabel(f"{AXIS_LABELS[i]} attitude error [deg]")
         ax.set_ylabel("rate error [deg/s]")
