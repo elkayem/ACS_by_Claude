@@ -255,6 +255,7 @@ def cmd_hold(args) -> int:
           f"peak slosh modal disp: {np.max(np.abs(result.eta[:, n_struct:])):.4f}")
     for p in plotting.plot_burn(result, args.output_dir, prefix="hold"):
         print(f"wrote {p}")
+    print(f"wrote {plotting.plot_phase_plane_logic(cfg, args.output_dir)}")
     return 0
 
 

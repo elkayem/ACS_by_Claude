@@ -298,6 +298,72 @@ def plot_hold_campaign(rows, output_dir: Path) -> Path:
     return _save(fig, output_dir, "hold_mc")
 
 
+def _shade_phase_plane(ax, pp, x_lo, x_hi, y_lo, y_hi, labels=False):
+    """Paint the phase-plane control regions exactly as PhasePlane.step
+    decides them: firing wherever |rate| > rate_limit_dps; outside the
+    switching lines s = theta + rate_lead_s*omega = +/-deadband_deg, firing
+    unless the return drift rate is >= min_drift_rate_dps (drift channel);
+    coast inside the hold channel."""
+    db, lead = pp.deadband_deg, pp.rate_lead_s
+    rl, wdr = pp.rate_limit_dps, pp.min_drift_rate_dps
+    lab = (lambda s: s) if labels else (lambda s: None)
+    y0, y1 = max(y_lo, -rl), min(y_hi, rl)
+    om = np.linspace(y0, y1, 80)
+    # hold channel (coast), clipped to the rate limit
+    ax.fill_betweenx(om, np.clip(-db - lead * om, x_lo, x_hi),
+                     np.clip(db - lead * om, x_lo, x_hi),
+                     color="#bfeef5", lw=0, label=lab("hold channel (coast)"))
+    # drift channels: coast back between min_drift_rate and rate_limit
+    om_p = np.linspace(min(wdr, y1), y1, 30)
+    ax.fill_betweenx(om_p, x_lo, np.clip(-db - lead * om_p, x_lo, x_hi),
+                     color="#f9e79f", lw=0, label=lab("drift channel"))
+    om_n = np.linspace(y0, max(-wdr, y0), 30)
+    ax.fill_betweenx(om_n, np.clip(db - lead * om_n, x_lo, x_hi), x_hi,
+                     color="#f9e79f", lw=0)
+    # firing regions: everything above/below the rate limit, plus outside
+    # the switching lines at sub-drift return rates
+    fire = dict(color="#f5c6bd", lw=0)
+    if y_hi > rl:
+        ax.fill_betweenx([rl, y_hi], x_lo, x_hi,
+                         label=lab("negative firing"), **fire)
+    if y_lo < -rl:
+        ax.fill_betweenx([y_lo, -rl], x_lo, x_hi,
+                         label=lab("positive firing"), **fire)
+    om_fp = np.linspace(max(-wdr, y0), y1, 30)
+    ax.fill_betweenx(om_fp, np.clip(db - lead * om_fp, x_lo, x_hi), x_hi, **fire)
+    om_fn = np.linspace(y0, min(wdr, y1), 30)
+    ax.fill_betweenx(om_fn, x_lo, np.clip(-db - lead * om_fn, x_lo, x_hi), **fire)
+    # switching lines, only where they border a firing region
+    om_hi = om[om > -wdr]
+    om_lo = om[om < wdr]
+    ax.plot(db - lead * om_hi, om_hi, ls="--", color="0.5", lw=0.9)
+    ax.plot(-db - lead * om_lo, om_lo, ls="--", color="0.5", lw=0.9)
+
+
+def plot_phase_plane_logic(cfg, output_dir: Path) -> Path:
+    """Standalone region map of the phase-plane logic, from the actual
+    config values — the same shading overlaid on simulation phase planes."""
+    pp = cfg.stationkeeping.phase_plane
+    x = 1.3 * (pp.deadband_deg + pp.rate_lead_s * pp.rate_limit_dps)
+    y = 1.3 * pp.rate_limit_dps
+    fig, ax = plt.subplots(figsize=(9, 6))
+    _shade_phase_plane(ax, pp, -x, x, -y, y, labels=True)
+    ax.axhline(0, color="0.3", lw=0.8)
+    ax.axvline(0, color="0.3", lw=0.8)
+    ax.set_xlim(-x, x)
+    ax.set_ylim(-y, y)
+    ax.set_xlabel("attitude error [deg]")
+    ax.set_ylabel("rate error [deg/s]")
+    ax.set_title(
+        f"Phase-plane logic — deadband_deg {pp.deadband_deg}, rate_lead_s "
+        f"{pp.rate_lead_s:.0f}, min_drift_rate_dps {pp.min_drift_rate_dps}, "
+        f"rate_limit_dps {pp.rate_limit_dps}", fontsize=10,
+    )
+    ax.legend(loc="upper right", fontsize=9)
+    ax.grid(alpha=0.3)
+    return _save(fig, output_dir, "phase_plane_logic")
+
+
 def plot_burn(result, output_dir: Path, prefix: str = "burn") -> list[Path]:
     """Thruster-mode phase-plane trajectories and time histories."""
     cfg = result.config
@@ -319,36 +385,15 @@ def plot_burn(result, output_dir: Path, prefix: str = "burn") -> list[Path]:
         # switching lines theta + lead*omega = +/-db. Drift channels
         # (yellow): outside the lines at bounded rate, where the vehicle
         # coasts back toward the hold channel after a firing.
-        rl = cfg.stationkeeping.phase_plane.rate_limit_dps
+        pp = cfg.stationkeeping.phase_plane
+        rl = pp.rate_limit_dps
         x_lo = min(th.min(), -db - lead * om.max()) - 0.1
         x_hi = max(th.max(), db - lead * om.min()) + 0.1
-        om_line = np.linspace(min(om.min(), -rl), max(om.max(), rl), 40)
-        ax.fill_betweenx(
-            om_line, -db - lead * om_line, db - lead * om_line,
-            color="#76d7ea", alpha=0.25, lw=0, label="attitude hold channel",
-        )
-        # Drift channels: horizontal rate bands outside the switching lines
-        # where the state coasts back toward the hold channel — bounded
-        # below by the drift rate the hysteresis establishes,
-        # (1-h)*db/lead, and above by the phase-plane rate limit.
-        w_dr = cfg.stationkeeping.phase_plane.min_drift_rate_dps
-        om_pos = np.linspace(w_dr, max(om.max(), rl), 20)
-        ax.fill_betweenx(
-            om_pos, x_lo, -db - lead * om_pos,
-            color="#f9e79f", alpha=0.55, lw=0, label="drift channel",
-        )
-        om_neg = np.linspace(min(om.min(), -rl), -w_dr, 20)
-        ax.fill_betweenx(
-            om_neg, db - lead * om_neg, x_hi,
-            color="#f9e79f", alpha=0.55, lw=0,
-        )
-        # Switching lines dashed only where they border a FIRING region —
-        # not along the drift channel, where coast simply continues
-        om_hi = om_line[om_line > -w_dr]
-        om_lo_seg = om_line[om_line < w_dr]
-        ax.plot(db - lead * om_hi, om_hi, ls="--", color="0.5", lw=0.9)
-        ax.plot(-db - lead * om_lo_seg, om_lo_seg, ls="--", color="0.5", lw=0.9)
+        y_lo = min(om.min() * 1.1, -1.1 * rl)
+        y_hi = max(om.max() * 1.1, 1.1 * rl)
+        _shade_phase_plane(ax, pp, x_lo, x_hi, y_lo, y_hi, labels=(i == 0))
         ax.set_xlim(x_lo, x_hi)
+        ax.set_ylim(y_lo, y_hi)
         ax.set_xlabel(f"{AXIS_LABELS[i]} attitude error [deg]")
         ax.set_ylabel("rate error [deg/s]")
         ax.set_title(f"phase plane — {AXIS_LABELS[i]}", fontsize=10)

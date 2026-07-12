@@ -178,7 +178,7 @@ margin against nonlinear divergence.
 
 ## Stationkeeping thruster mode
 
-![Phase-plane logic: firing regions, drift channels, attitude hold channel](docs/phase_plane.svg)
+![Phase-plane logic: firing regions, drift channels, hold channel](output/phase_plane_logic.png)
 
 `acs burn` runs a stationkeeping delta-V burn under thruster attitude
 control: the reaction wheels are held (thruster torques would saturate them
