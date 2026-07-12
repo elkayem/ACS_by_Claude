@@ -163,7 +163,11 @@ stationkeeping:
     # practice; tighten only against a payload requirement and retune.
     deadband_deg: 0.5
     rate_lead_s: 30.0
-    hysteresis: 0.3
+    hysteresis: 0.3        # unused: superseded by the drift-channel exit
+    # Drift channel: outside the hold channel the thrusters stay OFF while
+    # the rate carries the state back at >= min_drift_rate (up to the rate
+    # limit); firing only establishes/restores that drift rate
+    min_drift_rate_dps: 0.01
     rate_limit_dps: 0.05
     mod_depth: 0.5      # off-pulse duty reduction on the opposing subset
 

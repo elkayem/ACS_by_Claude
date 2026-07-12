@@ -331,7 +331,7 @@ def plot_burn(result, output_dir: Path, prefix: str = "burn") -> list[Path]:
         # where the state coasts back toward the hold channel — bounded
         # below by the drift rate the hysteresis establishes,
         # (1-h)*db/lead, and above by the phase-plane rate limit.
-        w_dr = (1.0 - cfg.stationkeeping.phase_plane.hysteresis) * db / lead
+        w_dr = cfg.stationkeeping.phase_plane.min_drift_rate_dps
         om_pos = np.linspace(w_dr, max(om.max(), rl), 20)
         ax.fill_betweenx(
             om_pos, x_lo, -db - lead * om_pos,

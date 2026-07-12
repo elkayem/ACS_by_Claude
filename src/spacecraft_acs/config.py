@@ -281,7 +281,12 @@ class PhasePlaneConfig:
 
     deadband_deg: float = 0.1
     rate_lead_s: float = 15.0  # switching function s = theta + lead * omega
-    hysteresis: float = 0.3  # stop firing once |s| < hysteresis * deadband
+    hysteresis: float = 0.3  # retained for config compat; superseded by the
+    # drift-channel exit below
+    # Minimum drift rate (omega_DR): outside the hold channel, firing stops
+    # once the rate carries the state back toward the channel at least this
+    # fast — the drift channel, where the thrusters stay OFF
+    min_drift_rate_dps: float = 0.01
     rate_limit_dps: float = 0.05  # fire against rate regardless of attitude
     mod_depth: float = 0.5  # off-pulse duty reduction on the opposing subset
     # Optional structural filtering of the switching function (the "Filter"

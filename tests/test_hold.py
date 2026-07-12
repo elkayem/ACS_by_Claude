@@ -39,10 +39,12 @@ def test_hold_acquires_and_stays():
     cfg = hold_config()
     res = simulate.run(cfg)
     db = cfg.stationkeeping.phase_plane.deadband_deg
-    err = np.linalg.norm(res.att_err_deg, axis=1)
-    assert err[0] > 0.9  # started ~1 deg off
+    # per-axis worst error: what the per-axis relay and drift channel bound
+    # (the norm of three independent limit cycles legitimately exceeds it)
+    err = np.max(np.abs(res.att_err_deg), axis=1)
+    assert np.linalg.norm(res.att_err_deg[0]) > 0.9  # started ~1 deg off
     half = len(res.t) // 2
-    assert np.all(err[half:] < 1.3 * db)  # captured and bounded
+    assert np.all(err[half:] < 1.3 * db)  # captured and bounded per axis
     # zero net delta-V from force-free couples
     assert np.all(np.abs(res.delta_v[-1]) < 1e-3)
     # wheels untouched

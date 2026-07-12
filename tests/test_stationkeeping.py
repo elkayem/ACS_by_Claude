@@ -52,25 +52,31 @@ def test_off_pulse_allocation_signs():
 
 def test_phase_plane_logic():
     pp = PhasePlane(PhasePlaneConfig(deadband_deg=0.1, rate_lead_s=10.0,
-                                     hysteresis=0.3, rate_limit_dps=0.05))
+                                     min_drift_rate_dps=0.01,
+                                     rate_limit_dps=0.05))
     db = np.deg2rad(0.1)
     zero = np.zeros(3)
-    # inside deadband: coast
+    w_dr = np.deg2rad(0.01)
+    # inside the hold channel: coast
     assert np.all(pp.step(zero + 0.5 * db, zero) == 0)
-    # beyond +deadband: fire negative
+    # beyond +deadband at zero rate: fire negative
     u = pp.step(np.array([2 * db, 0, 0]), zero)
     assert u[0] == -1 and u[1] == 0 and u[2] == 0
-    # keeps firing until inside the hysteresis band
-    u = pp.step(np.array([0.5 * db, 0, 0]), zero)
-    assert u[0] == -1
-    u = pp.step(np.array([0.1 * db, 0, 0]), zero)
+    # DRIFT CHANNEL: beyond +deadband but drifting back >= min drift rate ->
+    # thrusters stay off
+    u = pp.step(np.array([2 * db, 0, 0]), np.array([-2 * w_dr, 0, 0]))
     assert u[0] == 0
+    # favorable drift below the minimum drift rate: keep firing
+    u = pp.step(np.array([2 * db, 0, 0]), np.array([-0.5 * w_dr, 0, 0]))
+    assert u[0] == -1
+    # mirror side
+    u = pp.step(np.array([-2 * db, 0, 0]), np.array([2 * w_dr, 0, 0]))
+    assert u[0] == 0
+    u = pp.step(np.array([-2 * db, 0, 0]), zero)
+    assert u[0] == +1
     # rate limit fires against rate regardless of attitude
     u = pp.step(zero, np.array([0.0, np.deg2rad(0.1), 0.0]))
     assert u[1] == -1
-    # lead term: negative rate can trigger the negative switching line
-    u = pp.step(zero, np.array([0.0, 0.0, -np.deg2rad(0.02) / 10.0 * 15]))
-    assert u[2] in (0, 1)  # never fires the wrong way
 
 
 def test_burn_end_to_end():

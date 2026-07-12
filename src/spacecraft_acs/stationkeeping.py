@@ -51,25 +51,19 @@ class PhasePlane:
         s = theta_err + self.cfg.rate_lead_s * omega_err
         for f in self._filters:
             s = f.step(s)
-        u = self._firing.copy()
+        w_dr = np.deg2rad(self.cfg.min_drift_rate_dps)
+        u = np.zeros(3, dtype=int)
         for i in range(3):
             if abs(omega_err[i]) > self.rate_lim:
-                u[i] = -int(np.sign(omega_err[i]))
-            elif self._firing[i] == 0:
-                if s[i] > self.db:
-                    u[i] = -1
-                elif s[i] < -self.db:
-                    u[i] = +1
-            else:
-                # keep firing until the switching function re-enters the
-                # hysteresis band, then coast — but flip immediately if it
-                # shot through to the opposite deadband
-                if s[i] > self.db and self._firing[i] > 0:
-                    u[i] = -1
-                elif s[i] < -self.db and self._firing[i] < 0:
-                    u[i] = +1
-                elif abs(s[i]) < self.cfg.hysteresis * self.db:
-                    u[i] = 0
+                u[i] = -int(np.sign(omega_err[i]))  # rate damping
+            elif s[i] > self.db:
+                # right of the hold channel: coast if already drifting back
+                # (omega <= -w_dr, the drift channel); else fire negative
+                # until that drift rate is established
+                u[i] = 0 if omega_err[i] <= -w_dr else -1
+            elif s[i] < -self.db:
+                u[i] = 0 if omega_err[i] >= +w_dr else +1
+            # else: inside the attitude hold channel -> coast
         self._firing = u
         return u
 
